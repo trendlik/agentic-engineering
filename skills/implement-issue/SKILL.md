@@ -38,25 +38,29 @@ See [WORKFLOW.md](WORKFLOW.md) for full per-phase instructions.
 - Parse `<number>` from the invocation args (e.g. `/implement-issue 42` → number is `42`)
 - Parse optional `--skip-e2e` flag; if present, save `$RUN_E2E=false` immediately and skip asking the user
 - Never proceed past Phase 2 without explicit user plan approval
-- Derive `$FEATURE_BRANCH` from the project's branching strategy (CLAUDE.md → issue labels → title slug → fallback `issue-<number>`); use it everywhere — never hardcode `issue-<number>`
+- Derive `$FEATURE_BRANCH` from the project's branching strategy (CLAUDE.md / AGENTS.md → issue labels → title slug → fallback `issue-<number>`); use it everywhere — never hardcode `issue-<number>`
 - Pass full context to every sub-agent: issue number, title, body, clarification summary (including any explicitly REJECTED alternatives, not just the chosen decisions), approved plan, and the derived `$FEATURE_BRANCH`
 - The worktree path returned by the Phase 3 agent is reused in Phases 4, 5, and 7
 - Review agent must see ALL accumulated changes, including from prior loop iterations
 - On a clean review: open PR with `gh pr create --head $FEATURE_BRANCH` linking `Closes #<number>`, then enter Phase 7
 - On review issues: show findings, ask user whether to re-clarify (back to Phase 1) or re-implement (back to Phase 3), then loop
 - Phase 7: wait for CI, spawn fix agents on failure, loop — cap at 5 fix iterations
-- Phase 8: always runs after Phase 7 (pass or stop-and-report); tally loop counts, diagnose root causes, propose concrete edits to SKILL.md/WORKFLOW.md, apply with user approval
+- Phase 8: always runs after Phase 7 (pass or stop-and-report); tally loop counts, diagnose root causes, propose concrete edits to SKILL.md/WORKFLOW.md, apply with user approval, and commit to the appropriate skill directory (e.g. `~/.claude/skills/implement-issue` or `~/.gemini/config/skills/implement-issue`).
 
-## Model assignments
+## Model assignments & Capability Tiers
 
-The coordinator (Phases 1, 2, 6 decision, 7 watch, 8) runs on the session model — set it with `/model` (Opus recommended). Sub-agents pin their own model via the `model:` field in each `Agent({...})` block:
+The coordinator (Phases 1, 2, 6 decision, 7 watch, 8) runs on the session model — set it with `/model` (e.g. Opus or Gemini 3.5 Pro recommended).
 
-| Phase | Sub-agent | Model |
-|-------|-----------|-------|
-| 3 | Implement | `sonnet` |
-| 4 | Test | `sonnet` |
-| 5 | Review | `opus` |
-| 6 | Fix blocking issues | `sonnet` |
-| 7 | CI fix | `sonnet` |
+For sub-agents, we define two capability tiers:
+- **Coding Tier** (fast, highly accurate coding & tool usage): Map to `sonnet` (Claude Code) or `gemini-3.5-flash` (Antigravity).
+- **Review Tier** (strong reasoning, comprehensive analysis): Map to `opus` (Claude Code) or `gemini-3.5-pro` (Antigravity).
 
-If a sub-agent block has no `model:` field, it inherits the coordinator's model.
+| Phase | Sub-agent | Tier | Claude Code Model | Antigravity Model |
+|-------|-----------|------|-------------------|-------------------|
+| 3 | Implement | Coding | `sonnet` | `gemini-3.5-flash` |
+| 4 | Test | Coding | `sonnet` | `gemini-3.5-flash` |
+| 5 | Review | Review | `opus` | `gemini-3.5-pro` |
+| 6 | Fix blocking issues | Coding | `sonnet` | `gemini-3.5-flash` |
+| 7 | CI fix | Coding | `sonnet` | `gemini-3.5-flash` |
+
+When spawning sub-agents, use the appropriate model/tier configuration based on the platform you are running on. If a sub-agent execution has no explicit model/tier pinned, it inherits the coordinator's model.

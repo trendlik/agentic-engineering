@@ -53,20 +53,20 @@ git rebase origin/$BASE_BRANCH
 
 If the rebase fails, stop and report the conflicting files to the user — do not proceed until the base branch is clean.
 
-### Step 2 — Read CLAUDE.md and detect branching strategy
+### Step 2 — Read CLAUDE.md / AGENTS.md and detect branching strategy
 
-Read `CLAUDE.md` now to understand project conventions (test commands, framework, paths, TypeScript rules, etc.) — you will pass this context to sub-agents.
+Read `CLAUDE.md` or `AGENTS.md` now to understand project conventions (test commands, framework, paths, TypeScript rules, etc.) — you will pass this context to sub-agents.
 
-While reading CLAUDE.md, look for an explicit branch naming pattern. Common forms:
+While reading CLAUDE.md / AGENTS.md, look for an explicit branch naming pattern. Common forms:
 - `feat/<number>-<slug>`, `fix/<number>-<slug>`, `chore/<number>-<slug>`
 - `feature/<slug>`, `bugfix/<slug>`
 - `<type>/<number>`, `issue-<number>`
 
-If CLAUDE.md documents a pattern, follow it exactly.
+If CLAUDE.md or AGENTS.md documents a pattern, follow it exactly.
 
 ### Step 3 — Derive the feature branch name
 
-If CLAUDE.md defines a naming convention, apply it. Otherwise use this heuristic:
+If CLAUDE.md or AGENTS.md defines a naming convention, apply it. Otherwise use this heuristic:
 
 1. Determine the **type prefix** from the issue labels:
    - `bug` / `fix` / `defect` → `fix`
@@ -95,7 +95,7 @@ Draft the implementation plan in the conversation. Include:
 
 Show to user. Wait for explicit approval ("looks good", "approved", "go ahead"). If they request changes, revise and re-present. Do not proceed until approved.
 
-> **CI-config caveat:** Phase 4 verifies the build/tests locally but never executes the CI workflow itself, so errors in CI/deploy config files surface only in Phase 7. When the plan edits CI or deploy configuration, treat it as code: give it a focused sanity pass, and ensure any version/toolchain is pinned in exactly one place (a manifest field *or* an action input, never both). Record project-specific config gotchas in the repo's own docs (e.g. CLAUDE.md), not here.
+> **CI-config caveat:** Phase 4 verifies the build/tests locally but never executes the CI workflow itself, so errors in CI/deploy config files surface only in Phase 7. When the plan edits CI or deploy configuration, treat it as code: give it a focused sanity pass, and ensure any version/toolchain is pinned in exactly one place (a manifest field *or* an action input, never both). Record project-specific config gotchas in the repo's own docs (e.g. CLAUDE.md or AGENTS.md), not here.
 >
 > **Dockerfile caveat:** A local `tsc`/bundler build does NOT exercise a container, so packaging and runtime errors (missing runtime deps, wrong workdir, bad CMD path) are invisible until something actually runs the image. Treat any Dockerfile in the plan as code that must be run, not inspected. In particular, for a monorepo using pnpm/yarn-PnP/npm-workspaces, the runner stage cannot just `COPY` the root `node_modules` — those package managers use isolated/symlinked layouts whose runtime deps live elsewhere (pnpm surfaces them via `packages/<pkg>/node_modules` symlinks into `.pnpm/`). The runner needs a self-contained `node_modules` (e.g. `pnpm deploy --prod`, hoisted node-linker, or equivalent). Do not trust a Dockerfile supplied verbatim in the issue.
 
@@ -109,17 +109,15 @@ Save the answer as `$RUN_E2E` (`true` = full E2E, `false` = build + type-check o
 
 ## Phase 3: Implement
 
-Spawn an implementation sub-agent using `Agent` tool with `isolation: "worktree"`:
+Spawn an implementation sub-agent using your platform's sub-agent tool (Coding Tier):
+- **Claude Code**: Call `Agent({ description: "Implement issue #<number>", isolation: "worktree", model: "sonnet", prompt: <prompt> })`
+- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Implementer"`, `Workspace: "branch"` (or `"share"`), and the `Prompt` below.
 
+**Prompt / Configuration:**
 ```
-Agent({
-  description: "Implement issue #<number>",
-  isolation: "worktree",
-  model: "sonnet",
-  prompt: """
 You are implementing GitHub issue #<number> on branch `<feature_branch>` (derived from the project's branching strategy — use this exact name for commits and any git operations).
 
-Start by reading CLAUDE.md at the worktree root — it contains project conventions
+Start by reading CLAUDE.md / AGENTS.md at the worktree root — it contains project conventions
 (code style, TypeScript rules, framework versions, etc.) you must follow.
 
 ISSUE TITLE: <title>
@@ -142,8 +140,6 @@ YOUR TASK:
 - Do not open a PR
 
 When done, report: what files you changed and a brief summary of what you implemented.
-"""
-})
 ```
 
 The agent result will include the worktree path and branch name. **Save these** — you need them for Phases 4 and 5.
@@ -177,20 +173,19 @@ Report the result. If either command fails, treat it as a blocking issue and loo
 
 ### If `$RUN_E2E=true` (full test suite)
 
-Spawn a test sub-agent. Pass the worktree path from Phase 3 so it works on the same branch:
+Spawn a test sub-agent (Coding Tier) in the same worktree:
+- **Claude Code**: Call `Agent({ description: "Write tests for issue #<number>", model: "sonnet", prompt: <prompt> })`
+- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Tester"`, `Workspace: "inherit"`, and the `Prompt` below.
 
+**Prompt / Configuration:**
 ```
-Agent({
-  description: "Write tests for issue #<number>",
-  model: "sonnet",
-  prompt: """
 You are writing tests for changes made on branch `<feature_branch>`.
 
 The implementation is in the git worktree at: <worktree_path>
 
-Start by reading CLAUDE.md at <worktree_path>/CLAUDE.md — it specifies the test
+Start by reading CLAUDE.md / AGENTS.md at <worktree_path> — it specifies the test
 framework(s), test commands, and file conventions for this project. Follow those
-conventions exactly. If CLAUDE.md is not present, discover conventions by looking
+conventions exactly. If neither is present, discover conventions by looking
 at existing test files in the worktree.
 
 ISSUE TITLE: <title>
@@ -226,26 +221,23 @@ YOUR TASK:
 - Commit your tests: "test: add coverage for <description> (#<number>)"
 
 When done, report: what test files you created/modified and what behaviour they cover.
-"""
-})
 ```
 
 ---
 
 ## Phase 5: Review
 
-Spawn a review sub-agent:
+Spawn a review sub-agent (Review Tier):
+- **Claude Code**: Call `Agent({ description: "Review implementation of issue #<number>", model: "opus", prompt: <prompt> })`
+- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Reviewer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
+**Prompt / Configuration:**
 ```
-Agent({
-  description: "Review implementation of issue #<number>",
-  model: "opus",
-  prompt: """
 You are reviewing the implementation of GitHub issue #<number>.
 
 The changes are on branch `<feature_branch>` in the worktree at: <worktree_path>
 
-Start by reading CLAUDE.md at <worktree_path>/CLAUDE.md for project conventions.
+Start by reading CLAUDE.md / AGENTS.md at <worktree_path> for project conventions.
 
 ISSUE TITLE: <title>
 ISSUE BODY:
@@ -268,8 +260,6 @@ A) "LGTM" with a brief summary of what was reviewed
 B) A numbered list of issues, each with: severity (blocking/minor), file:line, description, and suggested fix
 
 Be strict — minor issues are worth flagging even if not blocking.
-"""
-})
 ```
 
 ---
@@ -278,19 +268,17 @@ Be strict — minor issues are worth flagging even if not blocking.
 
 ### If review returns blocking issues:
 
-Fix them automatically — do not ask the user. Spawn a fix sub-agent:
+Fix them automatically — do not ask the user. Spawn a fix sub-agent (Coding Tier) in the same worktree:
+- **Claude Code**: Call `Agent({ description: "Fix blocking review issues for issue #<number>", model: "sonnet", prompt: <prompt> })`
+- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
+**Prompt / Configuration:**
 ```
-Agent({
-  description: "Fix blocking review issues for issue #<number>",
-  isolation: "worktree",
-  model: "sonnet",
-  prompt: """
 You are fixing blocking issues found during code review of GitHub issue #<number>.
 
 The changes are on branch `<feature_branch>` in the worktree at: <worktree_path>
 
-Start by reading CLAUDE.md at <worktree_path>/CLAUDE.md for project conventions.
+Start by reading CLAUDE.md / AGENTS.md at <worktree_path> for project conventions.
 
 ISSUE TITLE: <title>
 APPROVED IMPLEMENTATION PLAN:
@@ -306,8 +294,6 @@ YOUR TASK:
 - Commit your fixes: "fix: address blocking review issues (#<number>)"
 
 When done, report: which issues you fixed and what you changed.
-"""
-})
 ```
 
 After the fix agent completes, loop back to **Phase 5** to re-review. If the re-review returns only minor issues or LGTM, proceed accordingly below.
@@ -364,7 +350,7 @@ Closes #<number>
 
 <bullet list of what the new tests cover>
 
-🤖 Generated with [Claude Code](https://claude.ai/claude-code)
+🤖 Generated with AI Agentic Coding (via Claude Code / Google Antigravity)
 EOF
 )"
 ```
@@ -415,18 +401,17 @@ Get the full failure logs first:
 gh run view <run-id> --log-failed
 ```
 
-Then spawn a fix sub-agent:
+Then spawn a fix sub-agent (Coding Tier) in the same worktree:
+- **Claude Code**: Call `Agent({ description: "Fix CI failures for issue #<number>", model: "sonnet", prompt: <prompt> })`
+- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "CI Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
+**Prompt / Configuration:**
 ```
-Agent({
-  description: "Fix CI failures for issue #<number>",
-  model: "sonnet",
-  prompt: """
 You are fixing CI failures for a PR on branch `<feature_branch>`.
 
 Worktree path: <worktree_path>
 
-Start by reading CLAUDE.md at <worktree_path>/CLAUDE.md — it specifies the test
+Start by reading CLAUDE.md / AGENTS.md at <worktree_path> — it specifies the test
 framework, test commands, and file layout for this project. Use it to locate test
 files and understand how tests are run.
 
@@ -450,8 +435,6 @@ YOUR TASK:
 7. Push: git -C <worktree_path> push --force-with-lease origin HEAD:<feature_branch>
 
 When done, report: which checks failed, what the root cause was, and what you changed.
-"""
-})
 ```
 
 ### Step 4 — Wait for the new CI run and loop
@@ -490,7 +473,7 @@ For each signal with count ≥ 1, identify the root cause. Map each cause to one
 
 - **Clarify gap** — the issue lacked context that a better Phase 1 checklist would have surfaced
 - **Plan gap** — an edge case or constraint was not in the plan and surfaced during review or CI
-- **Agent context gap** — a sub-agent lacked information it needed (missing CLAUDE.md field, missing worktree path, etc.)
+- **Agent context gap** — a sub-agent lacked information it needed (missing CLAUDE.md/AGENTS.md field, missing worktree path, etc.)
 - **Skill rule gap** — the skill's key rules didn't cover a decision the agent had to make ad-hoc
 - **Workflow step gap** — WORKFLOW.md was silent on how to handle a situation that came up
 
@@ -522,7 +505,11 @@ Show all proposals to the user in a single message. Ask:
 If the user approves (all or selective), apply the accepted edits directly to the skill files using the Edit tool. Commit the changes:
 
 ```bash
+# For Claude Code:
 git -C ~/.claude/skills/implement-issue commit -am "docs: retrospective improvements from issue #<number>"
+
+# For Google Antigravity:
+git -C ~/.gemini/config/skills/implement-issue commit -am "docs: retrospective improvements from issue #<number>"
 ```
 
 If the repository is not git-tracked or the commit fails, report what was changed and where.
