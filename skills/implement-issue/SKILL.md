@@ -44,7 +44,7 @@ See [WORKFLOW.md](WORKFLOW.md) for full per-phase instructions.
 - Review agent must see ALL accumulated changes, including from prior loop iterations
 - On a clean review: open PR with `gh pr create --head $FEATURE_BRANCH` linking `Closes #<number>`, then enter Phase 7
 - On review issues: show findings, ask user whether to re-clarify (back to Phase 1) or re-implement (back to Phase 3), then loop
-- Phase 7: wait for CI, spawn fix agents on failure, loop — cap at 5 fix iterations
+- Phase 7: wait for CI, spawn fix agents on failure, loop — cap at 5 fix iterations; before announcing success, re-query the PR state (`gh pr view <n> --json state,mergedBy`) and word the summary to match — the user may have merged or closed it mid-run, so never assume it is still open
 - Phase 8: always runs after Phase 7 (pass or stop-and-report); tally loop counts, diagnose root causes, propose concrete edits to SKILL.md/WORKFLOW.md, apply with user approval, and commit to the appropriate skill directory (e.g. `~/.claude/skills/implement-issue` or `~/.gemini/config/skills/implement-issue`).
 
 ## Model assignments & Capability Tiers

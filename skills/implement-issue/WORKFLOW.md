@@ -405,11 +405,22 @@ gh run view <run-id> --json conclusion,status
 gh pr checks <pr-number>
 ```
 
-If all checks show `pass`, restore the original branch and announce success:
+If all checks show `pass`, restore the original branch:
 
 ```bash
 git checkout $ORIGINAL_BRANCH
 ```
+
+Then re-query the PR's actual state immediately before composing the success summary — sub-agents and CI watches can run for many minutes, during which the user may merge or close the PR themselves. Do NOT assume the PR is still open just because you opened it:
+
+```bash
+gh pr view <pr-number> --json state,mergedAt,mergedBy,url
+```
+
+Word the announcement to match the queried `state`:
+- `MERGED` → "PR #<n> has been **merged** (by <mergedBy>): <url>" — do not say it is open or awaiting review.
+- `CLOSED` (not merged) → "PR #<n> was **closed** without merging: <url>" — flag this, since the implementation did not ship.
+- `OPEN` → "PR #<n> is open and all CI checks pass: <url>".
 
 ### Step 3 — If checks fail → spawn a CI fix agent
 
