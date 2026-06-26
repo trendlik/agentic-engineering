@@ -135,6 +135,8 @@ YOUR TASK:
 - Honor every constraint and edge case named in the plan above as a hard requirement — re-read the plan's risks/edge-cases and treat each as something your code must explicitly handle (e.g. guards against conflicting browser/OS behavior), not as optional prose
 - Where the clarification chose one option over a named alternative, implement ONLY the chosen option and do NOT add the rejected alternative as a fallback or convenience — re-adding it ("belt and suspenders") is a defect, not a courtesy
 - Do NOT write tests — a separate agent will handle that
+- Before committing, run the project's type-check / compile step and fix any
+  errors it reports — do not defer type or compile errors to the test phase
 - Follow existing code patterns and style
 - Commit your changes with a descriptive message referencing the issue: "<type>: <description> (#<number>)" where `<type>` matches the branch prefix (feat, fix, chore, docs, etc.)
 - Do not open a PR
@@ -148,6 +150,18 @@ The agent result will include the worktree path and branch name. **Save these** 
 
 ## Phase 4: Test
 
+### Worktree prerequisites (run once before any build/test)
+
+An isolated worktree starts without installed dependencies and without any
+files the project ignores from version control (env/secrets/local config). Before
+building or testing:
+- Install the project's dependencies inside the worktree.
+- Copy any version-control-ignored files the build or tests rely on from the
+  main checkout into the same relative path in the worktree.
+If a test fails because of missing configuration or credentials rather than a
+real assertion, suspect a missing ignored file before treating it as a genuine
+failure.
+
 ### If the change adds or edits a Dockerfile
 
 Before the build/test branches below, if `git diff` includes a `Dockerfile` and `docker` is available locally, run a container smoke test — `tsc`/bundler builds never exercise the image:
@@ -160,9 +174,13 @@ docker run --rm -d -p <port>:<port> -e NODE_ENV=production issue-<number>-smoke
 
 If the image fails to build or the endpoint doesn't respond, treat it as a blocking issue and loop back to Phase 3 — do not defer container errors to the review agent. If `docker` is unavailable locally, note that in the test report so the reviewer knows the container path is unverified.
 
-### If `$RUN_E2E=false` (build + type-check only)
+### If `$RUN_E2E=false` (skip the end-to-end suite)
 
-Run the build and type-check directly — no sub-agent needed:
+`$RUN_E2E=false` skips only the end-to-end test suite — it does NOT mean "write
+no tests." For any logic or behaviour change, still spawn the test sub-agent to
+add unit tests using the project's unit-test runner, then run the build and
+type-check. Skip the test sub-agent entirely only for genuinely non-logic
+changes (styling, configuration, copy). Run the build and type-check directly:
 
 ```bash
 npm --prefix <worktree_path> run build
