@@ -137,6 +137,9 @@ YOUR TASK:
 - Do NOT write tests — a separate agent will handle that
 - Before committing, run the project's type-check / compile step and fix any
   errors it reports — do not defer type or compile errors to the test phase
+- If a pre-commit reviewer you spawned has not reported back within ~3 minutes,
+  proceed without it — the coordinator will run its own pre-commit review before
+  opening the PR. Do not wait indefinitely.
 - Follow existing code patterns and style
 - Commit your changes with a descriptive message referencing the issue: "<type>: <description> (#<number>)" where `<type>` matches the branch prefix (feat, fix, chore, docs, etc.)
 - Do not open a PR
@@ -229,6 +232,10 @@ YOUR TASK:
   pass in isolation but fail under parallel load. For such specs also stress them
   with the runner's repeat flag (e.g. `--repeat-each=10`). Only report "passing"
   if the FULL suite is green — never conclude from a filtered run alone.
+- After the full suite passes, also run the project's build/compile step (check
+  CLAUDE.md for the command — it is the same command CI runs). Test runners
+  execute code at runtime and can succeed even when the compiler rejects the
+  test file; only the build pipeline catches compile-time errors in test files.
 - Do NOT commit machine-specific or environment workarounds. In particular, never
   change `playwright.config.ts` (baseURL/dev-server port) to dodge a local port
   collision — that config must match CI. If the configured port is occupied
