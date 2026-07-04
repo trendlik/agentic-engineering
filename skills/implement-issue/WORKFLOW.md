@@ -92,6 +92,7 @@ Draft the implementation plan in the conversation. Include:
 - The approach for each change (data model, UI, logic)
 - Edge cases and how they'll be handled
 - Any risks or tradeoffs
+- For removal/deletion changes: explicitly list any tests (unit or E2E) that cover the removed feature and confirm they will be deleted as part of the plan
 
 Show to user. Wait for explicit approval ("looks good", "approved", "go ahead"). If they request changes, revise and re-present. Do not proceed until approved.
 
@@ -139,7 +140,8 @@ YOUR TASK:
   errors it reports — do not defer type or compile errors to the test phase
 - If a pre-commit reviewer you spawned has not reported back within ~3 minutes,
   proceed without it — the coordinator will run its own pre-commit review before
-  opening the PR. Do not wait indefinitely.
+  opening the PR. Do not wait indefinitely. Set a mental 3-minute timer when you
+  spawn it; if no result by then, commit and report "pre-commit reviewer timed out".
 - Follow existing code patterns and style
 - Commit your changes with a descriptive message referencing the issue: "<type>: <description> (#<number>)" where `<type>` matches the branch prefix (feat, fix, chore, docs, etc.)
 - Do not open a PR
