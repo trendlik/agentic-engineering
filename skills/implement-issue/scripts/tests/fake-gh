@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Minimal stand-in for `gh`, used only by the test suite so tests never hit
+# the network or a real repo. Per-issue state (labels, title, comments,
+# label-timeline) is kept in flat files under $FAKE_GH_STATE_DIR. Set
+# FAKE_GH_NO_REPO=1 to simulate a non-GitHub-backed repo (gh repo view
+# fails). Set FAKE_GH_USER to control what `gh api user` resolves to, and
+# who shows up as the actor on any label applied via `issue edit
+# --add-label` (default: testuser).
+
+set -uo pipefail
+
+: "${FAKE_GH_STATE_DIR:?FAKE_GH_STATE_DIR must be set}"
+mkdir -p "$FAKE_GH_STATE_DIR"
+
+labels_file()   { echo "$FAKE_GH_STATE_DIR/issue-$1.labels"; }
+title_file()    { echo "$FAKE_GH_STATE_DIR/issue-$1.title"; }
+comments_file() { echo "$FAKE_GH_STATE_DIR/issue-$1.comments.json"; }
+timeline_file() { echo "$FAKE_GH_STATE_DIR/issue-$1.timeline.json"; }
+
+case "${1:-} ${2:-}" in
+  "issue view")
+    number=$3
+    shift 3
+    lf=$(labels_file "$number"); touch "$lf"
+    tf=$(title_file "$number")
+    title="Test issue"
+    [[ -f "$tf" ]] && title=$(cat "$tf")
+    cf=$(comments_file "$number")
+    comments="[]"
+    [[ -f "$cf" ]] && comments=$(cat "$cf")
+    # Avoid bash arrays here (no mapfile on bash 3.2 / macOS's default
+    # /bin/bash, and empty-array expansion under `set -u` is flaky pre-4.4)
+    # — build the JSON straight from the file with jq instead.
+    json_labels=$(jq -R -s 'split("\n") | map(select(length > 0)) | map({name: .})' "$lf")
+    json=$(jq -n --arg title "$title" --argjson labels "$json_labels" --argjson comments "$comments" \
+      '{title: $title, labels: $labels, comments: $comments}')
+    query=""
+    args=("$@")
+    for i in "${!args[@]}"; do
+      if [[ "${args[$i]}" == "-q" ]]; then query="${args[$((i+1))]}"; fi
+    done
+    if [[ -n "$query" ]]; then
+      echo "$json" | jq -r "$query"
+    else
+      echo "$json"
+    fi
+    ;;
+
+  "issue comment")
+    number=$3
+    shift 3
+    body=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --body) body=$2; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    cf=$(comments_file "$number")
+    existing="[]"
+    [[ -f "$cf" ]] && existing=$(cat "$cf")
+    echo "$existing" | jq --arg b "$body" '. + [{body: $b}]' > "$cf"
+    ;;
+
+  "issue edit")
+    number=$3
+    shift 3
+    lf=$(labels_file "$number"); touch "$lf"
+    tlf=$(timeline_file "$number")
+    [[ -f "$tlf" ]] || echo "[]" > "$tlf"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --add-label)
+          echo "$2" >> "$lf"
+          sort -u "$lf" -o "$lf"
+          # Record who applied it, same as GitHub's real issue timeline —
+          # verify-gates.sh reads this to check the approving role.
+          jq --arg label "$2" --arg actor "${FAKE_GH_USER:-testuser}" \
+            '. + [{event: "labeled", label: {name: $label}, actor: {login: $actor}}]' \
+            "$tlf" > "$tlf.tmp" && mv "$tlf.tmp" "$tlf"
+          shift 2 ;;
+        --remove-label)
+          grep -vxF "$2" "$lf" > "$lf.tmp" || true
+          mv "$lf.tmp" "$lf"
+          shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    ;;
+
+  "label create")
+    exit 0 ;;
+
+  "repo view")
+    if [[ "${FAKE_GH_NO_REPO:-0}" == "1" ]]; then
+      exit 1
+    fi
+    if [[ "$*" == *"defaultBranchRef"* ]]; then
+      echo "main"
+    fi
+    if [[ "$*" == *"nameWithOwner"* ]]; then
+      echo "test-owner/test-repo"
+    fi
+    exit 0 ;;
+
+  "auth status")
+    exit 0 ;;
+
+  "api user")
+    echo "${FAKE_GH_USER:-testuser}"
+    exit 0 ;;
+
+  api\ repos/*/issues/*/timeline)
+    number=$(echo "$2" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+')
+    tlf=$(timeline_file "$number")
+    if [[ -f "$tlf" ]]; then cat "$tlf"; else echo "[]"; fi
+    ;;
+
+  *)
+    echo "fake-gh: unhandled command: $*" >&2
+    exit 1 ;;
+esac

@@ -1,0 +1,66 @@
+# Template — copy this file to `.github/workflows/implement-issue-gate.yml`
+# in the TARGET PROJECT (not this skill's repo). It enforces that a PR's
+# linked issue had its analysis/plan gates approved by the right role, per
+# ROLES.yml (copy ROLES.example.yml to the target project's repo root and
+# fill in real usernames first — see ../SKILL.md's "CI enforcement" section).
+#
+# This workflow vendors the implement-issue scripts by checking out this
+# skill's own repo fresh on every run, so it always enforces the current
+# gate logic without the target project needing to copy scripts around.
+#
+# trendlik-org/agentic-engineering is PRIVATE, so the checkout below needs
+# an explicit token — the default GITHUB_TOKEN can only ever read the repo
+# the workflow itself runs in, even for other repos in the same org (this
+# is a hard GitHub limitation, not a missing setting). Create a fine-grained
+# PAT scoped to read-only Contents+Metadata on trendlik-org/agentic-engineering,
+# then store it as an ORG secret (not a repo secret, so every target repo in
+# trendlik-org can share it without re-creating it):
+#   gh secret set SKILL_REPO_TOKEN --org trendlik-org --repos "<target-repo-name>"
+#
+# Adding this workflow file makes the check RUN, but it does not yet BLOCK
+# merges — for that, add "implement-issue-gate" as a required status check
+# in the target repo's branch protection rules (Settings -> Branches).
+# Until you do that, this is informational only, same as gate.sh/role.sh.
+
+name: implement-issue-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  verify-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repo
+        uses: actions/checkout@v4
+
+      - name: Checkout implement-issue scripts
+        uses: actions/checkout@v4
+        with:
+          repository: trendlik-org/agentic-engineering
+          path: .implement-issue-skill
+          token: ${{ secrets.SKILL_REPO_TOKEN }}
+
+      - name: Resolve linked issue number
+        id: issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY=$(gh pr view "${{ github.event.pull_request.number }}" --json body -q .body)
+          NUMBER=$(echo "$BODY" | grep -ioE '(close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]]+#[0-9]+' | grep -oE '[0-9]+' | head -1)
+          if [[ -z "$NUMBER" ]]; then
+            echo "::error::PR body does not link an issue via Closes/Fixes/Resolves #<n> — cannot verify gates"
+            exit 1
+          fi
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Verify gate approvals
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .implement-issue-skill/skills/implement-issue/scripts/verify-gates.sh "${{ steps.issue.outputs.number }}"

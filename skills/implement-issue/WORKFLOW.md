@@ -1,5 +1,59 @@
 # implement-issue — Detailed Workflow
 
+## Phase 0: Resume Check
+
+Runs automatically at the start of every invocation, before Phase 1 — determines whether this issue is fresh or a previous session (possibly a different person, machine, or LLM adapter) already made progress, and jumps to the right place instead of restarting.
+
+1. Query the recorded stage:
+
+```bash
+STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
+```
+
+2. Advisory only, non-blocking (see `scripts/role.sh`) — check whether the current user is the role this stage is usually owned by:
+
+```bash
+"$SKILL_DIR/scripts/role.sh" check "${STAGE:-clarify}"
+```
+
+If this warns of a mismatch, mention it to the user once ("this phase is usually owned by `<role>`") and continue anyway — do not block. Real enforcement is a future step (see the skill's roadmap); today this is informational only.
+
+3. Branch on `$STAGE`:
+
+- **`none`** — fresh issue. Proceed to Phase 1 as written below.
+
+- **`clarify`** — Phase 1 already completed in a previous session (the clarification comment exists on the issue; `gate:analysis-approved` is set) but Phase 2 never started. Load it instead of re-clarifying:
+
+  ```bash
+  CLARIFICATION_SUMMARY=$("$SKILL_DIR/scripts/find-artifact.sh" <number> "Clarification Summary")
+  ```
+
+  Tell the user clarification is already done, show them the summary, and skip straight to "Between Phase 1 and Phase 2" → Phase 2.
+
+- **`plan`** — Phase 2 was started but never approved. There's nothing durable to recover here — the plan comment is only posted on approval (see Phase 2) — so load the clarification summary as above, skip Phase 1, and re-enter Phase 2 fresh. Tell the user a previous plan draft (if any) wasn't recoverable and needs redrafting.
+
+- **`implement`, `test`, `review`, `ci`** — Phase 2 was approved in a previous session. Load both persisted artifacts:
+
+  ```bash
+  CLARIFICATION_SUMMARY=$("$SKILL_DIR/scripts/find-artifact.sh" <number> "Clarification Summary")
+  APPROVED_PLAN=$("$SKILL_DIR/scripts/find-artifact.sh" <number> "Implementation Plan")
+  ```
+
+  Re-derive `$BASE_BRANCH` and `$FEATURE_BRANCH` as usual (Between Phase 1 and Phase 2, Steps 1 and 3) — these are deterministic, not stored, so there's nothing to load for them. Then check whether the branch already has commits:
+
+  ```bash
+  git ls-remote --heads origin "$FEATURE_BRANCH"
+  ```
+
+  - Branch exists: tell the user implementation may already be underway; ask whether to continue from it (fetch into a fresh worktree, resume at `$STAGE`) or discard it and restart Phase 3.
+  - Branch doesn't exist: nothing was actually implemented despite the stage label (the previous session likely ended right after Phase 2 approval) — proceed to Phase 3 as normal.
+
+- **`done`** — already finished. Tell the user and ask whether they want to re-open work on it anyway (stale label, or genuinely new follow-up work) before doing anything.
+
+Always announce which branch was taken (e.g. "Resuming issue #<n> at stage: implement" or "Starting fresh — no prior progress recorded") before proceeding — the user should never be surprised that phases were silently skipped.
+
+---
+
 ## Phase 1: Clarify
 
 1. Capture the current branch so it can be restored when the skill exits:
@@ -9,6 +63,8 @@ ORIGINAL_BRANCH=$(git branch --show-current)
 ```
 
 **Save `$ORIGINAL_BRANCH`** — restore it on every exit path (success or stop-and-report).
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" init <number>` — sets `stage:clarify` if the issue has no stage label yet (idempotent; does nothing if Phase 0 already found an existing stage).
 
 2. Run: `gh issue view <number> --json title,body,labels,comments`
 3. Read the issue carefully. Identify anything ambiguous: unclear acceptance criteria, missing context, edge cases not addressed, scope questions.
@@ -35,6 +91,12 @@ EOF
 )"
 ```
 
+7. Best effort, non-blocking — record progress for future resumability. If the call fails (labels disabled, no push access, offline), log a warning and continue; do not let it stop the phase:
+
+```bash
+"$SKILL_DIR/scripts/state.sh" approve <number> analysis
+```
+
 ---
 
 ## Between Phase 1 and Phase 2: Sync local branch and derive branch name
@@ -44,14 +106,14 @@ Before drafting the plan, detect the base branch, derive the feature branch name
 ### Step 1 — Detect base branch
 
 ```bash
-BASE_BRANCH=$(git remote show origin | grep "HEAD branch" | awk '{print $NF}')
-git fetch origin
-git rebase origin/$BASE_BRANCH
+BASE_BRANCH=$("$SKILL_DIR/scripts/sync-base.sh")
 ```
+
+This detects the base branch, fetches, and rebases the current branch onto it in one deterministic step (same logic on every machine, tested in isolation — see `scripts/tests/test_sync_base.sh`).
 
 **Save `$BASE_BRANCH`** — you will need it in Phases 6 and 7.
 
-If the rebase fails, stop and report the conflicting files to the user — do not proceed until the base branch is clean.
+If the script exits non-zero, it has already printed the conflicting files to stderr and left the rebase in progress — stop and report them to the user; do not proceed until the base branch is clean.
 
 ### Step 2 — Read CLAUDE.md / AGENTS.md and detect branching strategy
 
@@ -66,26 +128,21 @@ If CLAUDE.md or AGENTS.md documents a pattern, follow it exactly.
 
 ### Step 3 — Derive the feature branch name
 
-If CLAUDE.md or AGENTS.md defines a naming convention, apply it. Otherwise use this heuristic:
+If CLAUDE.md or AGENTS.md defines a naming convention, apply it exactly — that's a judgement call only the agent can make (reading and matching arbitrary project prose). Otherwise use the deterministic default:
 
-1. Determine the **type prefix** from the issue labels:
-   - `bug` / `fix` / `defect` → `fix`
-   - `feature` / `enhancement` / `feat` → `feat`
-   - `chore` / `maintenance` / `refactor` → `chore`
-   - `docs` → `docs`
-   - anything else / no labels → `feat`
+```bash
+FEATURE_BRANCH=$("$SKILL_DIR/scripts/derive-branch.sh" <number>)
+```
 
-2. Slugify the issue title: lowercase, replace spaces and special chars with `-`, trim to 40 chars, strip leading/trailing `-`.
-
-3. Compose: `<type>/<number>-<slug>` (e.g. `feat/42-add-user-avatar`)
-
-4. Fall back to `issue-<number>` only if slugification produces an empty string.
+The script composes `<type>/<number>-<slug>` from the issue's labels and title (type prefix priority: `bug`/`fix`/`defect` → `fix`, `feature`/`enhancement`/`feat` → `feat`, `chore`/`maintenance`/`refactor` → `chore`, `docs` → `docs`, else → `feat`; title is lowercased, slugified, and trimmed to 40 chars; falls back to `issue-<number>` if the slug is empty). Same output on every machine — see `scripts/tests/test_derive_branch.sh`.
 
 **Save `$FEATURE_BRANCH`** — every sub-agent prompt and git command must use this value, not a hardcoded `issue-<number>`.
 
 ---
 
 ## Phase 2: Plan
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> plan`
 
 Draft the implementation plan in the conversation. Include:
 - Which files will change and why
@@ -105,6 +162,26 @@ After plan approval, if `--skip-e2e` was **not** passed, ask the user:
 > "Should Phase 4 run the full E2E test suite, or build + type-check only? (Choose build-only for CSS, config, or copy-only changes where E2E adds no signal.)"
 
 Save the answer as `$RUN_E2E` (`true` = full E2E, `false` = build + type-check only). If `--skip-e2e` was passed, `$RUN_E2E=false` and skip this question.
+
+Once both the plan and `$RUN_E2E` are settled, persist the approved plan as a GitHub comment — this is the artifact a *different* person or session reads back on resume (mirrors the Phase 1 clarification comment; see Phase 0). Use a quoted heredoc (`'EOF'`) and substitute the literal plan text and E2E decision in place of the placeholders — do not let shell expansion touch the plan body:
+
+```bash
+gh issue comment <number> --body "$(cat <<'EOF'
+## Implementation Plan
+
+<the approved plan, verbatim>
+
+**Run E2E tests:** <true|false>
+EOF
+)"
+```
+
+Then, best effort, non-blocking (see Setup in SKILL.md):
+
+```bash
+"$SKILL_DIR/scripts/state.sh" approve <number> plan
+"$SKILL_DIR/scripts/state.sh" set <number> implement
+```
 
 ---
 
@@ -154,6 +231,8 @@ The agent result will include the worktree path and branch name. **Save these** 
 ---
 
 ## Phase 4: Test
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> test`
 
 ### Worktree prerequisites (run once before any build/test)
 
@@ -253,6 +332,8 @@ When done, report: what test files you created/modified and what behaviour they 
 ---
 
 ## Phase 5: Review
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> review`
 
 Spawn a review sub-agent (Review Tier):
 - **Claude Code**: Call `Agent({ description: "Review implementation of issue #<number>", model: "opus", prompt: <prompt> })`
@@ -391,6 +472,8 @@ EOF
 
 ## Phase 7: CI Watch & Fix
 
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> ci`
+
 After the PR is created, monitor GitHub CI and fix any failures. Loop until all checks pass (cap at 5 fix iterations to avoid infinite loops).
 
 ### Step 1 — Wait for CI to complete
@@ -419,6 +502,8 @@ If all checks show `pass`, restore the original branch:
 ```bash
 git checkout $ORIGINAL_BRANCH
 ```
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> done`
 
 Then re-query the PR's actual state immediately before composing the success summary — sub-agents and CI watches can run for many minutes, during which the user may merge or close the PR themselves. Do NOT assume the PR is still open just because you opened it:
 

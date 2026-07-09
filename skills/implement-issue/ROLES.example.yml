@@ -1,0 +1,25 @@
+# Template for role-scoping the implement-issue skill on a project.
+#
+# Copy this file to the TARGET PROJECT's repo root as `ROLES.yml` (next to
+# CLAUDE.md/AGENTS.md) — it does NOT belong in this skill's own directory,
+# since roles are per-project, not per-skill.
+#
+# Format is deliberately restricted so it can be parsed without a real YAML
+# library (see scripts/role.sh): exactly one `github-username: role` pair
+# per line. Blank lines and lines starting with `#` are ignored. Trailing
+# `# comments` after the role are stripped.
+#
+# Valid roles: analyst, architect, developer, qa
+#   analyst   — finalizes the feature description (Phase 1: Clarify)
+#   architect — approves the implementation plan (Phase 2: Plan)
+#   developer — oversees implementation, review, and CI (Phases 3, 5, 7)
+#   qa        — oversees testing (Phase 4: Test)
+#
+# If this file is absent, or a user isn't listed in it, role.sh fails open —
+# nothing is restricted. This is advisory only today (a warning if the wrong
+# role runs a phase); real enforcement is a future, server-side step.
+
+alice: analyst
+bob: architect
+carol: developer
+dave: qa

@@ -47,3 +47,11 @@ for s in ~/Documents/GitHub/agentic-engineering/skills/*/; do
   ln -s "$s" ~/.gemini/config/skills/"$(basename "$s")"
 done
 ```
+
+Skills that ship a `scripts/doctor.sh` (e.g. `implement-issue`) let you verify the new
+machine is ready in one command, e.g.:
+```bash
+~/.claude/skills/implement-issue/scripts/doctor.sh
+```
+It checks for git/gh/jq, gh authentication, and a GitHub-backed origin remote, and prints
+exactly what's missing.

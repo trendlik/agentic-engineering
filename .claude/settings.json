@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jq --version)",
+      "Bash(./run-tests.sh)",
+      "Bash(bash --version)",
+      "Bash(command -v bash)",
+      "Read(//opt/homebrew/bin/**)",
+      "Bash(/bin/bash --version)",
+      "Edit(~/.claude/skills/implement-issue/**)"
+    ]
+  }
+}
