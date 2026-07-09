@@ -51,6 +51,16 @@ FAKE_GH_USER=bob "$STATE" approve 41 plan >/dev/null 2>&1
 assert_failure "fails when the approver isn't listed in ROLES.yml" \
   bash -c "cd '$REPO' && '$VERIFY' 41"
 
+# --- one person holding multiple comma-separated roles can satisfy both
+# gates alone (e.g. solo testing under a single account) ---
+cat >> "$REPO/ROLES.yml" <<'EOF'
+erin: analyst,architect,developer,qa
+EOF
+FAKE_GH_USER=erin "$STATE" approve 42 analysis >/dev/null 2>&1
+FAKE_GH_USER=erin "$STATE" approve 42 plan >/dev/null 2>&1
+assert_success "passes when a single multi-role approver covers both gates" \
+  bash -c "cd '$REPO' && '$VERIFY' 42"
+
 echo "verify-gates.sh (base-ref mode: a PR can't grant itself a role by editing ROLES.yml)"
 
 ORIGIN=$(mktemp -d)

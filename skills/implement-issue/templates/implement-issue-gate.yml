@@ -8,18 +8,19 @@
 # skill's own repo fresh on every run, so it always enforces the current
 # gate logic without the target project needing to copy scripts around.
 #
-# trendlik-org/agentic-engineering is PRIVATE, so the checkout below needs
-# an explicit token — the default GITHUB_TOKEN can only ever read the repo
-# the workflow itself runs in, even for other repos in the same org (this
-# is a hard GitHub limitation, not a missing setting). Create a fine-grained
-# PAT scoped to read-only Contents+Metadata on trendlik-org/agentic-engineering,
-# then store it as a secret named SKILL_REPO_TOKEN — the workflow below reads
-# it the same way regardless of which scope you pick:
+# trendlik/agentic-engineering is PRIVATE, so the checkout below needs an
+# explicit token — the default GITHUB_TOKEN can only ever read the repo the
+# workflow itself runs in, never a different repo, even one you personally
+# own (a hard GitHub limitation, not a missing setting). Create a
+# fine-grained PAT scoped to read-only Contents+Metadata on
+# trendlik/agentic-engineering, then store it as a secret named
+# SKILL_REPO_TOKEN — the workflow below reads it the same way regardless of
+# which scope you pick:
 #   - One target repo, simplest for now:
 #       gh secret set SKILL_REPO_TOKEN --repo <owner>/<target-repo>
-#   - Several target repos sharing one secret instead of re-creating it
-#     per repo:
-#       gh secret set SKILL_REPO_TOKEN --org trendlik-org --repos "<target-repo-name>"
+#   - Several target repos sharing one secret instead of re-creating it per
+#     repo (needs an org — not required otherwise):
+#       gh secret set SKILL_REPO_TOKEN --org <your-org> --repos "<target-repo-name>"
 #
 # Adding this workflow file makes the check RUN, but it does not yet BLOCK
 # merges — for that, add "implement-issue-gate" as a required status check
@@ -52,7 +53,7 @@ jobs:
       - name: Checkout implement-issue scripts
         uses: actions/checkout@v4
         with:
-          repository: trendlik-org/agentic-engineering
+          repository: trendlik/agentic-engineering
           path: .implement-issue-skill
           token: ${{ secrets.SKILL_REPO_TOKEN }}
 

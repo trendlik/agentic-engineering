@@ -48,3 +48,11 @@ ensure_label() {
   local name=$1 color=$2 desc=$3
   gh label create "$name" --color "$color" --description "$desc" --force >/dev/null 2>&1
 }
+
+# CSV membership test for ROLES.yml values, which may list more than one
+# role for a single person (e.g. "analyst,architect" for someone covering
+# multiple hats — see ROLES.example.yml). Empty $1 never matches anything.
+has_role() {
+  local roles_csv=$1 target=$2
+  [[ -n "$roles_csv" && ",${roles_csv}," == *",${target},"* ]]
+}

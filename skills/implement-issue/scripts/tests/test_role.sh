@@ -46,6 +46,15 @@ assert_success "check passes when role matches the stage" bash -c "cd '$REPO' &&
 # Mismatched role.
 assert_failure "check fails (exit 1) on a real role mismatch" bash -c "cd '$REPO' && '$ROLE' check clarify"
 
+# A user holding multiple comma-separated roles matches any of them.
+cat >> "$REPO/ROLES.yml" <<'EOF'
+erin: analyst,architect,developer,qa
+EOF
+FAKE_GH_USER=erin
+assert_eq "$(cd "$REPO" && "$ROLE" whoami)" "analyst,architect,developer,qa" "whoami returns the full comma-separated role list"
+assert_success "check passes for one of several comma-separated roles (clarify -> analyst)" bash -c "cd '$REPO' && '$ROLE' check clarify"
+assert_success "check passes for a different one of the same roles (plan -> architect)" bash -c "cd '$REPO' && '$ROLE' check plan"
+
 unset FAKE_GH_USER
 
 echo "role.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"

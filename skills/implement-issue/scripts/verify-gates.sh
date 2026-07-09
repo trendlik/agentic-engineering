@@ -28,7 +28,10 @@
 #
 # Requires a `gh`-authenticated token with repo read access (the default
 # GITHUB_TOKEN in Actions has this for same-repo issues) and ROLES.yml
-# committed at the repo root (see ROLES.example.yml).
+# committed at the repo root (see ROLES.example.yml). A single approver may
+# hold more than one comma-separated role in ROLES.yml (e.g. for solo
+# testing where one account plays every role) — any gate whose required
+# role is among that person's roles passes.
 
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -101,11 +104,11 @@ for gate in "${GATES[@]}"; do
   if [[ -z "$role" ]]; then
     err "FAIL  '$actor' (applied gate:${gate}-approved) has no role in ROLES.yml"
     fail=1
-  elif [[ "$role" != "$required" ]]; then
-    err "FAIL  gate:${gate}-approved was applied by '$actor' (role: $role), but requires role: $required"
+  elif ! has_role "$role" "$required"; then
+    err "FAIL  gate:${gate}-approved was applied by '$actor' (role(s): $role), but requires role: $required"
     fail=1
   else
-    ok "OK    gate:${gate}-approved applied by '$actor' (role: $required), as required"
+    ok "OK    gate:${gate}-approved applied by '$actor' (role(s): $role), which includes required role: $required"
   fi
 done
 

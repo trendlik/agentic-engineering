@@ -17,14 +17,20 @@
 #   review  -> developer    ci      -> developer
 #   done    -> (none)
 #
+# A single user can hold more than one role — comma-separate them in
+# ROLES.yml (e.g. "trendlik: analyst,architect,developer,qa" for solo
+# testing) rather than repeating the username on multiple lines; only the
+# first line for a given username is ever read (see ROLES.example.yml).
+#
 # Usage:
-#   role.sh whoami            print the current gh user's assigned role, or
+#   role.sh whoami            print the current gh user's assigned role(s)
+#                              (comma-separated if more than one), or
 #                              "unassigned" / "no-roles-file"
 #   role.sh required <stage>  print the role a stage is owned by (empty for
 #                              stages with no assigned owner)
-#   role.sh check <stage>     exit 0 if the current user's role matches (or
-#                              nothing can be verified); exit 1 on a real
-#                              mismatch
+#   role.sh check <stage>     exit 0 if the current user holds the required
+#                              role (or nothing can be verified); exit 1 on
+#                              a real mismatch
 
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -103,8 +109,8 @@ case "$cmd" in
         warn "current gh user has no role assigned in ROLES.yml -- nothing enforced"
         exit 0 ;;
     esac
-    if [[ "$current" == "$required" ]]; then
-      ok "role '$current' matches required role '$required' for stage '$stage'"
+    if has_role "$current" "$required"; then
+      ok "role(s) '$current' include required role '$required' for stage '$stage'"
       exit 0
     else
       warn "stage '$stage' is owned by role '$required'; current user is mapped to '$current'"
