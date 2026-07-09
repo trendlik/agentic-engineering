@@ -103,6 +103,8 @@ EOF
 
 Before drafting the plan, detect the base branch, derive the feature branch name from the project's branching strategy, and ensure the local branch is up to date so the plan reflects the current codebase.
 
+Do not begin drafting the plan until this section's sync/derive steps have actually been run this session — jumping straight from Phase 1 into plan-drafting is a real failure mode, not just a hypothetical one.
+
 ### Step 1 — Detect base branch
 
 ```bash
