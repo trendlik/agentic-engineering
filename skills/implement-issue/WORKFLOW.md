@@ -46,6 +46,15 @@ If this warns of a mismatch, mention it to the user once ("this phase is usually
   ```
 
   - Branch exists: tell the user implementation may already be underway; ask whether to continue from it (fetch into a fresh worktree, resume at `$STAGE`) or discard it and restart Phase 3.
+
+    If continuing: unlike the clarification and plan, the Phase 3/4 sub-agents' own "what I implemented" / "what I tested" prose reports are never persisted anywhere — do not assume they're recoverable from a prior session. Derive that context directly from the branch instead, which is more reliable anyway:
+
+    ```bash
+    git -C <worktree_path> log --oneline "origin/$BASE_BRANCH..HEAD"
+    git -C <worktree_path> diff "origin/$BASE_BRANCH...HEAD" --stat
+    ```
+
+    Read the commit messages and changed-files list (and the actual diff for anything non-obvious) to reconstruct "what was implemented" / "what was tested" before feeding it into whichever phase's sub-agent prompt comes next.
   - Branch doesn't exist: nothing was actually implemented despite the stage label (the previous session likely ended right after Phase 2 approval) — proceed to Phase 3 as normal.
 
 - **`done`** — already finished. Tell the user and ask whether they want to re-open work on it anyway (stale label, or genuinely new follow-up work) before doing anything.
@@ -96,6 +105,15 @@ EOF
 ```bash
 "$SKILL_DIR/scripts/state.sh" approve <number> analysis
 ```
+
+### Checkpoint: do not auto-continue into planning
+
+Clarification and planning are not the same act, and not necessarily the same person — an analyst clarifying requirements does not imply they (or anyone present in this session) is the architect who should now draft the plan. Ask explicitly:
+
+> "Clarification recorded. Should plan drafting start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
+
+- **Proceed now**: continue directly into "Between Phase 1 and Phase 2" → Phase 2 below, same session.
+- **Stop here**: the state is already correctly recorded (`stage:clarify`, `gate:analysis-approved`) — that's exactly what Phase 0 reads on the next invocation to resume at Phase 2 with the clarification already loaded (see Phase 0's `clarify` branch). Restore `$ORIGINAL_BRANCH`, tell the user plan drafting is ready to start whenever (same command, this or a different session/person: `/implement-issue <number>`), and end here — this is a clean stop, not a failure to report.
 
 ---
 
@@ -185,6 +203,15 @@ Then, best effort, non-blocking (see Setup in SKILL.md):
 "$SKILL_DIR/scripts/state.sh" set <number> implement
 ```
 
+### Checkpoint: do not auto-continue into implementation
+
+Plan approval and implementation are not the same act, and not necessarily the same person — an architect approving the plan does not imply they (or anyone present in this session) is the one who should now write the code. Ask explicitly:
+
+> "Plan approved and recorded. Should implementation start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
+
+- **Proceed now**: continue directly into Phase 3 below, same session.
+- **Stop here**: the state is already correctly recorded (`stage:implement`, `gate:plan-approved`) — that's exactly what Phase 0 reads on the next invocation to resume at Phase 3 with the clarification and plan already loaded (see Phase 0's `implement`/`test`/`review`/`ci` branch). Restore `$ORIGINAL_BRANCH`, tell the user implementation is ready to start whenever (same command, this or a different session/person: `/implement-issue <number>`), and end here — this is a clean stop, not a failure to report.
+
 ---
 
 ## Phase 3: Implement
@@ -230,11 +257,26 @@ When done, report: what files you changed and a brief summary of what you implem
 
 The agent result will include the worktree path and branch name. **Save these** — you need them for Phases 4 and 5.
 
+Push the branch so it's visible to anyone resuming, regardless of whether you continue in this session or not — commits sitting only in a local worktree aren't recoverable by Phase 0's resume logic, which checks the remote:
+
+```bash
+git -C <worktree_path> push -u origin HEAD:<feature_branch>
+```
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> test`
+
+### Checkpoint: do not auto-continue into testing
+
+Implementation and testing are not the same act, and not necessarily the same person — a developer implementing the feature does not imply they (or anyone present in this session) is the QA person who should now test it. Ask explicitly:
+
+> "Implementation done, committed, and pushed. Should testing start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
+
+- **Proceed now**: continue directly into Phase 4 below, same session — you already have the worktree path and `$FEATURE_BRANCH`.
+- **Stop here**: the state is already correctly recorded (`stage:test`). Restore `$ORIGINAL_BRANCH` on the main checkout — the worktree itself stays on the feature branch, which is fine; a resuming session fetches its own fresh worktree per Phase 0. Tell the user testing is ready to start whenever, and end here.
+
 ---
 
 ## Phase 4: Test
-
-Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> test`
 
 ### Worktree prerequisites (run once before any build/test)
 
@@ -331,11 +373,26 @@ YOUR TASK:
 When done, report: what test files you created/modified and what behaviour they cover.
 ```
 
+Push the branch (idempotent — safe even if nothing new was committed this phase, e.g. the `$RUN_E2E=false` build-only path):
+
+```bash
+git -C <worktree_path> push origin HEAD:<feature_branch>
+```
+
+Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> review`
+
+### Checkpoint: do not auto-continue into review
+
+Testing and review are not the same act, and not necessarily the same person — a QA person confirming tests pass does not imply they (or anyone present in this session) is the developer who should now review the code. Ask explicitly:
+
+> "Testing done, committed, and pushed. Should review start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
+
+- **Proceed now**: continue directly into Phase 5 below, same session.
+- **Stop here**: the state is already correctly recorded (`stage:review`). Restore `$ORIGINAL_BRANCH` on the main checkout. Tell the user review is ready to start whenever, and end here.
+
 ---
 
 ## Phase 5: Review
-
-Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> review`
 
 Spawn a review sub-agent (Review Tier):
 - **Claude Code**: Call `Agent({ description: "Review implementation of issue #<number>", model: "opus", prompt: <prompt> })`

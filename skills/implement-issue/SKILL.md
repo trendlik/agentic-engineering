@@ -88,6 +88,8 @@ Steps 1–2 just make the check *run* (informational, visible on the PR, not blo
 - Phase 0's role check is advisory only — warn on a mismatch, never block on it
 - Parse optional `--skip-e2e` flag; if present, save `$RUN_E2E=false` immediately and skip asking the user
 - Never proceed past Phase 2 without explicit user plan approval
+- Never auto-continue from plan approval into Phase 3 — always ask whether to implement now or stop here for a different person/session to pick up (plan approval and implementation may not be the same person)
+- Same rule at every other role boundary: never auto-continue from clarification into planning, or from implementation into testing, or from testing into review — always ask. Push the branch before any of these checkpoints (except Clarify→Plan, which has no branch yet) — Phase 0's resume logic checks the remote, not local worktree state, so unpushed commits aren't recoverable by a resuming session
 - Derive `$FEATURE_BRANCH` from the project's branching strategy (CLAUDE.md / AGENTS.md → issue labels → title slug → fallback `issue-<number>`); use it everywhere — never hardcode `issue-<number>`
 - Pass full context to every sub-agent: issue number, title, body, clarification summary (including any explicitly REJECTED alternatives, not just the chosen decisions), approved plan, and the derived `$FEATURE_BRANCH`
 - The worktree path returned by the Phase 3 agent is reused in Phases 4, 5, and 7
