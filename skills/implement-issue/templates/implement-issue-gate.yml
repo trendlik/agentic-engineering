@@ -13,9 +13,13 @@
 # the workflow itself runs in, even for other repos in the same org (this
 # is a hard GitHub limitation, not a missing setting). Create a fine-grained
 # PAT scoped to read-only Contents+Metadata on trendlik-org/agentic-engineering,
-# then store it as an ORG secret (not a repo secret, so every target repo in
-# trendlik-org can share it without re-creating it):
-#   gh secret set SKILL_REPO_TOKEN --org trendlik-org --repos "<target-repo-name>"
+# then store it as a secret named SKILL_REPO_TOKEN — the workflow below reads
+# it the same way regardless of which scope you pick:
+#   - One target repo, simplest for now:
+#       gh secret set SKILL_REPO_TOKEN --repo <owner>/<target-repo>
+#   - Several target repos sharing one secret instead of re-creating it
+#     per repo:
+#       gh secret set SKILL_REPO_TOKEN --org trendlik-org --repos "<target-repo-name>"
 #
 # Adding this workflow file makes the check RUN, but it does not yet BLOCK
 # merges — for that, add "implement-issue-gate" as a required status check
