@@ -10,15 +10,7 @@ Runs automatically at the start of every invocation, before Phase 1 — determin
 STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
 ```
 
-2. Advisory only, non-blocking (see `scripts/role.sh`) — check whether the current user is the role this stage is usually owned by:
-
-```bash
-"$SKILL_DIR/scripts/role.sh" check "${STAGE:-clarify}"
-```
-
-If this warns of a mismatch, mention it to the user once ("this phase is usually owned by `<role>`") and continue anyway — do not block. Real enforcement is a future step (see the skill's roadmap); today this is informational only.
-
-3. Branch on `$STAGE`:
+2. Branch on `$STAGE`:
 
 - **`none`** — fresh issue. Proceed to Phase 1 as written below.
 

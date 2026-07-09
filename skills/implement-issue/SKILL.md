@@ -59,33 +59,28 @@ New machine? Run `$SKILL_DIR/scripts/doctor.sh` first — it verifies git/gh/jq 
 | `derive-branch.sh <issue>` | inline label→prefix + slugify heuristic | Between Phase 1 and 2 |
 | `state.sh` | — (new) | stage/gate bookkeeping at every phase transition; read by Phase 0 to dispatch |
 | `find-artifact.sh <issue> <heading>` | — (new) | Phase 0 — loads a previously-posted clarification/plan comment on resume |
-| `role.sh` | — (new) | Phase 0 — advisory check of who usually owns a stage |
 | `gate.sh <issue> <gate>` | — (new) | manual/local advisory gate check (fails open) |
 | `verify-gates.sh <issue>` | — (new) | **CI only** — the fail-closed enforcement check; see below |
 
 `state.sh` persists the issue's workflow stage and approval gates as GitHub labels (`stage:*`, `gate:*-approved`) — see the header comment in `scripts/state.sh` for the full command reference. Writing this state (at every phase transition) is **best-effort bookkeeping**: if a call fails (labels disabled, no push access, offline), log a warning and continue — the existing conversational approval in Phase 1/2 remains the actual gate. **Reading** it, however, is load-bearing: Phase 0 uses `state.sh get` to decide whether to resume mid-workflow, which is what makes a different session — or a different person, or a different LLM adapter — able to pick up where a previous one left off. See WORKFLOW.md's Phase 0 for the full dispatch logic.
 
-`role.sh` reads `ROLES.yml` from the **target project's** repo root (not this skill's directory — copy `ROLES.example.yml` there and fill in real usernames) to check whether the current GitHub user matches the role a stage is usually owned by (analyst/architect/developer/qa). It fails open whenever nothing can be verified — no `ROLES.yml`, unlisted user, no `gh`/`jq` — so a project that hasn't set up roles is unaffected. This is advisory only today (Phase 0 warns on a mismatch but never blocks) — real enforcement is `verify-gates.sh`, below.
-
 ## CI enforcement
 
-`gate.sh`/`role.sh` are advisory: they run locally and fail open, so they can warn but never stop a determined (or careless) person from self-approving their own gate. `verify-gates.sh` closes that gap — it checks the GitHub issue's label *timeline*, not just current label state, to find who actually applied each `gate:*-approved` label, and fails the check if that person's `ROLES.yml` role doesn't match what the gate requires (`gate:analysis-approved` → `analyst`, `gate:plan-approved` → `architect`). It's meant to run as a **required PR status check**, not locally.
+`gate.sh` is advisory: it runs locally and fails open, so it can warn but never stop someone from self-approving their own gate. `verify-gates.sh` is the fail-closed counterpart — it checks that each required gate label (`gate:analysis-approved`, `gate:plan-approved`) is actually present on the linked issue before a PR can merge. It's a **presence check, not an identity check**: it doesn't verify *who* applied the label, only that it exists. (An earlier version cross-referenced the approver's identity against a role mapping; that was dropped — it was trivially neutered by one person legitimately holding multiple roles, and GitHub's own issue timeline already shows who applied any label in plain UI without needing a script's help. If you want to know who approved a gate, look at the issue.) It's meant to run as a **required PR status check**, not locally.
 
 To turn this on for a project:
 
-1. Copy `ROLES.example.yml` to the target project's repo root as `ROLES.yml`, filling in real GitHub usernames.
-2. Copy `templates/implement-issue-gate.yml` to the target project's `.github/workflows/implement-issue-gate.yml`. It checks out this skill's repo fresh on every run (no need to vendor scripts into the target project) and resolves the linked issue from the PR body's `Closes #<n>`.
+1. Copy `templates/implement-issue-gate.yml` to the target project's `.github/workflows/implement-issue-gate.yml`. It checks out this skill's repo fresh on every run (no need to vendor scripts into the target project) and resolves the linked issue from the PR body's `Closes #<n>`.
    - `trendlik/agentic-engineering` is **private**, so this checkout needs an explicit token — `GITHUB_TOKEN` can never read a different repo, even one you personally own (a hard GitHub limitation, not a missing setting). Create a fine-grained PAT scoped to read-only Contents+Metadata on `trendlik/agentic-engineering`, then store it as a secret named `SKILL_REPO_TOKEN`. Simplest for a single target repo: `gh secret set SKILL_REPO_TOKEN --repo <owner>/<target-repo>`. If several target repos need it, an org secret avoids re-creating it per repo (needs an org — not required otherwise): `gh secret set SKILL_REPO_TOKEN --org <your-org> --repos "<target-repo-name>"`.
-3. In the target repo's branch protection settings, add `implement-issue-gate` as a required status check.
+2. In the target repo's branch protection settings, add `implement-issue-gate` as a required status check.
 
-Steps 1–2 just make the check *run* (informational, visible on the PR, not blocking). Step 3 is what makes it actually enforce — and it's a repo-admin action with real consequences for collaborators, so treat it deliberately: confirm with whoever owns the target repo's branch protection before adding it, and consider running it informationally for a while first to catch false positives (e.g. a valid approver who isn't in `ROLES.yml` yet).
+Step 1 just makes the check *run* (informational, visible on the PR, not blocking). Step 2 is what makes it actually enforce — and it's a repo-admin action with real consequences for collaborators, so treat it deliberately: confirm with whoever owns the target repo's branch protection before adding it.
 
 ## Key rules
 
 - Resolve `$SKILL_DIR` first (see Setup above) — every script invocation below depends on it
 - Parse `<number>` from the invocation args (e.g. `/implement-issue 42` → number is `42`)
 - Always run Phase 0 before Phase 1 — never assume an issue is fresh; let `state.sh get` decide whether to resume mid-workflow
-- Phase 0's role check is advisory only — warn on a mismatch, never block on it
 - Parse optional `--skip-e2e` flag; if present, save `$RUN_E2E=false` immediately and skip asking the user
 - Never proceed past Phase 2 without explicit user plan approval
 - Never auto-continue from plan approval into Phase 3 — always ask whether to implement now or stop here for a different person/session to pick up (plan approval and implementation may not be the same person)
