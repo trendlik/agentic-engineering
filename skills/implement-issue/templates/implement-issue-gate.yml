@@ -25,6 +25,11 @@
 # merges — for that, add "implement-issue-gate" as a required status check
 # in the target repo's branch protection rules (Settings -> Branches).
 # Until you do that, this is informational only, same as gate.sh/role.sh.
+#
+# The final step passes github.base_ref so verify-gates.sh reads ROLES.yml
+# from the PR's base branch, not the PR's own (possibly edited) branch —
+# don't drop that argument, or a PR could grant itself whatever role it
+# needs by editing ROLES.yml within itself.
 
 name: implement-issue-gate
 
@@ -67,4 +72,6 @@ jobs:
       - name: Verify gate approvals
         env:
           GH_TOKEN: ${{ github.token }}
-        run: .implement-issue-skill/skills/implement-issue/scripts/verify-gates.sh "${{ steps.issue.outputs.number }}"
+        run: >-
+          .implement-issue-skill/skills/implement-issue/scripts/verify-gates.sh
+          "${{ steps.issue.outputs.number }}" "${{ github.base_ref }}"

@@ -14,7 +14,18 @@
 # being lenient. See templates/implement-issue-gate.yml for the workflow
 # that calls this.
 #
-# Usage: verify-gates.sh <issue-number>
+# Usage: verify-gates.sh <issue-number> [base-ref]
+#
+# Pass [base-ref] (e.g. "main") in CI. Without it, ROLES.yml is read from
+# whatever's checked out in the working tree right now — fine for a manual/
+# local run, but NOT safe for a PR check: for a pull_request-triggered
+# workflow, the checked-out tree is the PR's own merge commit, so a PR could
+# edit ROLES.yml to grant its own author whatever role it needs and self-
+# approve past this check. Passing [base-ref] makes the script fetch
+# ROLES.yml from that ref specifically via `git show`, independent of
+# whatever the PR branch contains, so a PR can't rewrite its own
+# permissions. templates/implement-issue-gate.yml always passes it.
+#
 # Requires a `gh`-authenticated token with repo read access (the default
 # GITHUB_TOKEN in Actions has this for same-repo issues) and ROLES.yml
 # committed at the repo root (see ROLES.example.yml).
@@ -24,22 +35,31 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "$DIR/lib/common.sh"
 
-[[ $# -eq 1 ]] || die "usage: verify-gates.sh <issue-number>"
+[[ $# -eq 1 || $# -eq 2 ]] || die "usage: verify-gates.sh <issue-number> [base-ref]"
 number=$1
+base_ref=${2:-}
 require_cmd git "https://git-scm.com/downloads"
 require_cmd gh "https://cli.github.com"
 require_cmd jq "brew install jq"
 
-root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
-roles_file="$root/ROLES.yml"
-if [[ ! -f "$roles_file" ]]; then
-  err "FAIL  ROLES.yml not found at repo root -- role enforcement cannot run (see ROLES.example.yml)"
-  exit 1
+if [[ -n "$base_ref" ]]; then
+  git fetch origin "$base_ref" --depth=1 -q || die "could not fetch base ref '$base_ref' to read ROLES.yml"
+  roles_content=$(git show "origin/$base_ref:ROLES.yml" 2>/dev/null) || {
+    err "FAIL  ROLES.yml not found on base ref '$base_ref' -- role enforcement cannot run (see ROLES.example.yml)"
+    exit 1
+  }
+else
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git repository"
+  if [[ ! -f "$root/ROLES.yml" ]]; then
+    err "FAIL  ROLES.yml not found at repo root -- role enforcement cannot run (see ROLES.example.yml)"
+    exit 1
+  fi
+  roles_content=$(cat "$root/ROLES.yml")
 fi
 
 lookup_role() {
   local user=$1
-  grep -E "^${user}:" "$roles_file" 2>/dev/null \
+  grep -E "^${user}:" <<<"$roles_content" \
     | head -n1 \
     | sed -E 's/^[^:]+:[[:space:]]*//' \
     | sed -E 's/[[:space:]]*#.*$//' \
