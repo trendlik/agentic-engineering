@@ -32,7 +32,12 @@ fi
 info "base branch: $base"
 git fetch origin || die "git fetch origin failed"
 
-if ! git rebase "origin/$base"; then
+
+# git rebase writes its own progress/status text (e.g. "Current branch main
+# is up to date.") to STDOUT, which would otherwise land in the caller's
+# `BASE_BRANCH=$(sync-base.sh)` capture alongside the real return value.
+# Redirect it to stderr — still visible, just out of the captured stream.
+if ! git rebase "origin/$base" >&2; then
   err "rebase onto origin/$base failed — conflicting files:"
   git diff --name-only --diff-filter=U >&2
   die "resolve conflicts, then: git rebase --continue (or git rebase --abort)"

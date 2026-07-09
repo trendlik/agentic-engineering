@@ -58,6 +58,12 @@ assert_eq "$out" "main" "prints the detected base branch on success"
 on_main_commit=$(cd "$SANDBOX/work" && git log --oneline | grep -c "advance main")
 assert_eq "$on_main_commit" "1" "feature branch is rebased onto the latest main"
 
+# --- already up to date: `git rebase` prints its own status text
+# ("Current branch main is up to date.") to STDOUT in this case, which must
+# not leak into the captured return value alongside the real branch name ---
+out=$(cd "$SANDBOX/work" && "$SYNC" 2>/dev/null)
+assert_eq "$out" "main" "output stays clean ('main' only) when already up to date, not polluted by git's own status text"
+
 # --- conflict path: leaves the rebase in progress and reports the file ---
 (
   cd "$SANDBOX/work"
