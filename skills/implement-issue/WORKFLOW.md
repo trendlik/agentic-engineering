@@ -68,7 +68,7 @@ ORIGINAL_BRANCH=$(git branch --show-current)
 Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" init <number>` — sets `stage:clarify` if the issue has no stage label yet (idempotent; does nothing if Phase 0 already found an existing stage).
 
 2. Run: `gh issue view <number> --json title,body,labels,comments`
-3. Read the issue carefully. Identify anything ambiguous: unclear acceptance criteria, missing context, edge cases not addressed, scope questions.
+3. Read the issue carefully. Identify anything ambiguous: unclear acceptance criteria, missing context, edge cases not addressed, scope questions. If `$LEARNINGS_FILE` exists, also run every item in its **Clarify checklist (Phase 1)** section against the issue.
 4. Ask the user your questions in a single message (don't drip one at a time unless follow-ups are needed).
 5. Iterate until you have clear answers.
 6. When satisfied, post a structured clarification summary as a GitHub comment:
@@ -162,10 +162,11 @@ Draft the implementation plan in the conversation. Include:
 - Edge cases and how they'll be handled
 - Any risks or tradeoffs
 - For removal/deletion changes: explicitly list any tests (unit or E2E) that cover the removed feature and confirm they will be deleted as part of the plan
+- If `$LEARNINGS_FILE` exists, honor every entry in its **Planning constraints (Phase 2)** section — address each relevant one explicitly in the plan
 
 Show to user. Wait for explicit approval ("looks good", "approved", "go ahead"). If they request changes, revise and re-present. Do not proceed until approved.
 
-> **CI-config caveat:** Phase 4 verifies the build/tests locally but never executes the CI workflow itself, so errors in CI/deploy config files surface only in Phase 7. When the plan edits CI or deploy configuration, treat it as code: give it a focused sanity pass, and ensure any version/toolchain is pinned in exactly one place (a manifest field *or* an action input, never both). Record project-specific config gotchas in the repo's own docs (e.g. CLAUDE.md or AGENTS.md), not here.
+> **CI-config caveat:** Phase 4 verifies the build/tests locally but never executes the CI workflow itself, so errors in CI/deploy config files surface only in Phase 7. When the plan edits CI or deploy configuration, treat it as code: give it a focused sanity pass, and ensure any version/toolchain is pinned in exactly one place (a manifest field *or* an action input, never both). Record project-specific config gotchas in the repo's `.implement-issue/LEARNINGS.md` under **Planning constraints (Phase 2)** (via the Phase 8 retrospective) or in CLAUDE.md / AGENTS.md — not here.
 >
 > **Dockerfile caveat:** A local `tsc`/bundler build does NOT exercise a container, so packaging and runtime errors (missing runtime deps, wrong workdir, bad CMD path) are invisible until something actually runs the image. Treat any Dockerfile in the plan as code that must be run, not inspected. In particular, for a monorepo using pnpm/yarn-PnP/npm-workspaces, the runner stage cannot just `COPY` the root `node_modules` — those package managers use isolated/symlinked layouts whose runtime deps live elsewhere (pnpm surfaces them via `packages/<pkg>/node_modules` symlinks into `.pnpm/`). The runner needs a self-contained `node_modules` (e.g. `pnpm deploy --prod`, hoisted node-linker, or equivalent). Do not trust a Dockerfile supplied verbatim in the issue.
 
@@ -282,6 +283,10 @@ If a test fails because of missing configuration or credentials rather than a
 real assertion, suspect a missing ignored file before treating it as a genuine
 failure.
 
+If `$LEARNINGS_FILE` exists, follow its **Build & test (Phase 4)** section
+(commands, environment quirks, required ignored files) and append that section
+verbatim to the test sub-agent prompt below.
+
 ### If the change adds or edits a Dockerfile
 
 Before the build/test branches below, if `git diff` includes a `Dockerfile` and `docker` is available locally, run a container smoke test — `tsc`/bundler builds never exercise the image:
@@ -389,6 +394,8 @@ Testing and review are not the same act, and not necessarily the same person —
 Spawn a review sub-agent (Review Tier):
 - **Claude Code**: Call `Agent({ description: "Review implementation of issue #<number>", model: "opus", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Reviewer"`, `Workspace: "inherit"`, and the `Prompt` below.
+
+If `$LEARNINGS_FILE` exists, append its **Review checklist (Phase 5)** section to the prompt below as additional repo-specific review items.
 
 **Prompt / Configuration:**
 ```
@@ -575,6 +582,8 @@ Get the full failure logs first:
 gh run view <run-id> --log-failed
 ```
 
+If `$LEARNINGS_FILE` exists, check its **CI quirks (Phase 7)** section for a known failure signature matching these logs — a documented flake with a proven fix beats rediscovering it — and append the section to the fix-agent prompt below.
+
 Then spawn a fix sub-agent (Coding Tier) in the same worktree:
 - **Claude Code**: Call `Agent({ description: "Fix CI failures for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "CI Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
@@ -627,7 +636,7 @@ Report the situation to the user — it likely needs manual investigation.
 
 ## Phase 8: Retrospective
 
-After CI passes (or after a stop-and-report exit), run a retrospective on this implementation session and propose targeted improvements to the skill's own documentation.
+After CI passes (or after a stop-and-report exit), run a retrospective on this implementation session, propose targeted improvements, and route each one to its proper destination — the target project's learnings file or the skill repo's issue tracker. Users of this skill never edit the skill directly (see "Project learnings" in SKILL.md).
 
 ### Step 1 — Collect signals
 
@@ -651,16 +660,24 @@ For each signal with count ≥ 1, identify the root cause. Map each cause to one
 - **Skill rule gap** — the skill's key rules didn't cover a decision the agent had to make ad-hoc
 - **Workflow step gap** — WORKFLOW.md was silent on how to handle a situation that came up
 
-### Step 3 — Propose documentation changes
+### Step 3 — Propose changes, classified by scope
 
-For each diagnosed gap, draft a concrete, minimal edit to SKILL.md or WORKFLOW.md that would prevent the same friction next time. Format each proposal as:
+For each diagnosed gap, draft a concrete, minimal change that would prevent the same friction next time, and classify its scope:
+
+- **`project`** — tied to this repo's technology, conventions, or CI, and expressible as *content* under one of the fixed headings in `.implement-issue/LEARNINGS.md`: **Clarify checklist (Phase 1)**, **Planning constraints (Phase 2)**, **Build & test (Phase 4)**, **Review checklist (Phase 5)**, **CI quirks (Phase 7)**.
+- **`skill`** — a gap in the skill's own phases, rules, or prompts that would recur in any project.
+
+A finding that is project-specific but fits none of the LEARNINGS.md headings is trying to change the flow — never store it as a learning. Either reframe it as phase content under a heading, or (if the flow itself is genuinely wrong) classify it as `skill` so the maintainers decide.
+
+Format each proposal as:
 
 ```
 [PROPOSAL N]
-File: SKILL.md | WORKFLOW.md
-Location: <section heading or line reference>
+Scope: project | skill
+Target: <LEARNINGS.md section heading> | <SKILL.md/WORKFLOW.md + section heading or line reference>
 Change: <add | edit | remove>
 Reason: <one sentence — what friction this prevents>
+Evidence: <which Step 1 signal fired (with count) and the Step 2 root-cause category>
 
 --- before ---
 <existing text, or "(nothing — new addition)">
@@ -670,20 +687,63 @@ Reason: <one sentence — what friction this prevents>
 
 Only propose changes that are directly supported by what happened in this session. Do not invent hypothetical improvements.
 
-### Step 4 — Present and apply
+### Step 4a — Project-scoped proposals → the target project's learnings file
 
-Show all proposals to the user in a single message. Ask:
+Show the project-scoped proposals to the user in a single message. Ask:
 
-> "Found N documentation improvement(s) based on this session. Apply all, apply selectively, or skip?"
+> "Found N project-specific learning(s) from this session. Store all, store selectively, or skip?"
 
-If the user approves (all or selective), apply the accepted edits directly to the skill files using the Edit tool. Commit the changes:
+For each accepted proposal:
+
+1. If `.implement-issue/LEARNINGS.md` doesn't exist at the project root, create it from `$SKILL_DIR/templates/LEARNINGS.md`.
+2. Append the entry under its target section heading, ending with provenance: `(issue #<number>, <YYYY-MM-DD>, skill@$(git -C "$SKILL_DIR" rev-parse --short HEAD))`.
+3. Commit in the project repo:
 
 ```bash
-# For Claude Code:
-git -C ~/.claude/skills/implement-issue commit -am "docs: retrospective improvements from issue #<number>"
-
-# For Google Antigravity:
-git -C ~/.gemini/config/skills/implement-issue commit -am "docs: retrospective improvements from issue #<number>"
+git add .implement-issue/LEARNINGS.md
+git commit -m "docs: implement-issue learnings from issue #<number>"
 ```
 
-If the repository is not git-tracked or the commit fails, report what was changed and where.
+If the commit fails (e.g. detached state, hooks), report what was written and where — the file content is the deliverable; the commit is best-effort.
+
+### Step 4b — Skill-scoped proposals → issue on the skill repo
+
+The default channel is an **issue, not a PR**: a single session is weak evidence for changing the skill, and the issue tracker is where recurrence across projects and users becomes visible. Maintainers promote a finding to an actual change once the pattern is strong enough.
+
+For each skill-scoped proposal (after showing it to the user and getting their OK to file it):
+
+1. Search for an existing report of the same finding:
+
+```bash
+gh issue list --repo trendlik/agentic-engineering --label retrospective --state open --search "<keywords from the proposal>"
+```
+
+2. If a matching issue exists, add the evidence as a comment (recurrence is the signal maintainers are waiting for). If not, create one:
+
+```bash
+gh issue create --repo trendlik/agentic-engineering --label retrospective \
+  --title "retrospective: <one-line finding>" \
+  --body "<evidence block below>"
+```
+
+(If the `retrospective` label doesn't exist or can't be applied, create the issue without it.) Evidence block format — same for new issues and recurrence comments:
+
+```
+## Retrospective evidence
+
+**Project:** <owner/repo> · **Issue:** #<number> · **Date:** <YYYY-MM-DD> · **Skill commit:** <short-sha>
+**Signal:** <which Step 1 signal fired, with count>
+**Diagnosis:** <Step 2 root-cause category>
+
+<the full [PROPOSAL] block from Step 3, verbatim — including the before/after diff>
+```
+
+3. If the user has no access to the skill repo (`gh issue create` fails with a permission error), print the evidence block and ask them to relay it to the skill's maintainers.
+
+**Maintainer path (exception):** only when the user has push access to the skill repo — check with `gh repo view trendlik/agentic-engineering --json viewerPermission` (`WRITE` or `ADMIN`) — offer a choice: file the issue as above (default), or apply the edit directly to `$SKILL_DIR` and commit:
+
+```bash
+git -C "$SKILL_DIR" commit -am "docs: retrospective improvements from issue #<number>"
+```
+
+Never apply directly without both the access *and* the user explicitly choosing it; when in doubt, file the issue.
