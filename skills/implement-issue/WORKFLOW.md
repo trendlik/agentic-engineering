@@ -680,6 +680,16 @@ Tally the following from this session:
 
 Best effort, non-blocking (same posture as the `state.sh` calls elsewhere): persist this run's signals into `.implement-issue/outcomes.jsonl` in the target repo via `scripts/record-outcome.sh`. If the call fails (no write access, disk issue, offline), log a warning and continue — do not let it stop the retrospective. This step exists so a future change-sizing step has a reference class of actual past runs to draw on; it stores raw signals only, no size judgment.
 
+**First, capture whether the ledger is being seeded from empty** — do this *before* the `record-outcome.sh` write below, because that write adds this run's entry and an "is the ledger empty?" check afterward would never observe an empty ledger:
+
+```bash
+# 0 when the ledger is absent or empty, else its current line count.
+# Anchor to the git toplevel so the check reads the same file record-outcome.sh
+# writes, regardless of the current working directory.
+LEDGER="$(git rev-parse --show-toplevel)/.implement-issue/outcomes.jsonl"
+LEDGER_LINES=$( [[ -s "$LEDGER" ]] && wc -l < "$LEDGER" | tr -d ' ' || echo 0 )
+```
+
 The record combines the Step 1 tallies above with the PR's diff stats:
 
 ```bash
@@ -709,6 +719,18 @@ gh issue view <number> --json createdAt
   ci_fixes=<Step 1 tally> \
   wall_clock_hours=<issue createdAt -> PR mergedAt, in hours>
 ```
+
+**One-time backfill offer (best-effort, non-blocking — same posture as above).** If this run just seeded a previously-empty ledger (`LEDGER_LINES` was `0`) AND the repo has reconstructable history — at least one already-closed issue carrying a `stage:*` label — then the ledger is missing every issue implemented before it existed. Offer (never force) a one-time backfill so the reference class isn't permanently empty:
+
+```bash
+if [[ "$LEDGER_LINES" -eq 0 ]] && \
+   [[ -n "$(gh issue list --state closed --json number,labels \
+             --jq '.[] | select(.labels | map(.name) | any(startswith("stage:"))) | .number' 2>/dev/null)" ]]; then
+  "$SKILL_DIR/scripts/backfill-outcomes.sh" run --dry-run   # preview what would be seeded
+fi
+```
+
+Show the user the dry-run preview, explain the ledger was empty but backfillable from existing history, and ask whether to run `"$SKILL_DIR/scripts/backfill-outcomes.sh" run` (which upserts the reconstructed records). This is an offer, not an action — same best-effort posture as `record-outcome.sh` above; a `gh` failure must never stop the retrospective. If either condition is false (a fresh repo with no history, or a ledger that already has entries) or the user declines, skip silently — this must never nag on a normal run.
 
 On a stop-and-report exit (no PR merged), still write a record with `outcome=aborted` and whatever fields are actually known (e.g. `pr`, `diff_loc`, and `wall_clock_hours` may be unavailable if no PR was ever opened) — leave the rest null rather than guessing.
 
