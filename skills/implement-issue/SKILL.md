@@ -71,7 +71,7 @@ If it exists, read it once now. Each phase in WORKFLOW.md consumes only its own 
 | `gate.sh <issue> <gate>` | — (new) | manual/local advisory gate check (fails open) |
 | `verify-gates.sh <issue>` | — (new) | **CI only** — the fail-closed enforcement check; see below |
 | `record-outcome.sh <issue> key=value ...` | — (new) | Phase 8 |
-| `backfill-outcomes.sh <extract\|run>` | — (new) | one-off backfill |
+| `backfill-outcomes.sh <extract\|run>` | — (new) | Phase 8 Step 1b (seed offer); manual |
 
 `state.sh` persists the issue's workflow stage and approval gates as GitHub labels (`stage:*`, `gate:*-approved`) — see the header comment in `scripts/state.sh` for the full command reference. Writing this state (at every phase transition) is **best-effort bookkeeping**: if a call fails (labels disabled, no push access, offline), log a warning and continue — the existing conversational approval in Phase 1/2 remains the actual gate. **Reading** it, however, is load-bearing: Phase 0 uses `state.sh get` to decide whether to resume mid-workflow, which is what makes a different session — or a different person, or a different LLM adapter — able to pick up where a previous one left off. See WORKFLOW.md's Phase 0 for the full dispatch logic.
 
@@ -105,6 +105,8 @@ A per-repo historical record of completed (and aborted) runs — the data substr
 Phase 8 appends (or upserts) one line per run, best-effort and non-blocking, via `scripts/record-outcome.sh`. At a glance, each line carries: `issue`, `title`, `pr`, `labels`, `outcome` (merged/closed/aborted), size signals (`plan_file_count`, `files_changed`, `diff_loc`, `commits`), friction signals (`clarify_rounds`, `plan_revisions`, `review_loops`, `ci_fixes`), `wall_clock_hours`, and provenance (`skill_sha`, `recorded_at`). Fields that can't be reconstructed for a given run are stored as JSON `null` — never guessed or defaulted to 0.
 
 `scripts/backfill-outcomes.sh` can seed the ledger from issues that were already implemented and merged/closed before the ledger existed, reconstructing what it can from `gh issue view` / `gh pr view` history and leaving the rest (`plan_file_count`, `clarify_rounds`, `plan_revisions`, `review_loops`) null.
+
+**Seeding an existing repo.** A repo that adopts the skill on top of existing implemented history starts with an empty ledger and stays that way unless seeded — leaving the future change-sizing step with no reference class. Phase 8 Step 1b detects this (ledger empty *and* at least one already-closed `stage:*`-labelled issue exists) and makes a one-time, best-effort offer to run the backfill; it stays silent on a fresh repo with no history or a ledger that already has entries. You can also seed manually at any time: `scripts/backfill-outcomes.sh run --dry-run` to preview, then `scripts/backfill-outcomes.sh run` to write.
 
 ## Key rules
 
