@@ -29,6 +29,10 @@ STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
   ```bash
   CLARIFICATION_SUMMARY=$("$SKILL_DIR/scripts/find-artifact.sh" <number> "Clarification Summary")
   APPROVED_PLAN=$("$SKILL_DIR/scripts/find-artifact.sh" <number> "Implementation Plan")
+  # At stage `review`/`ci` a Review Findings comment may also exist (Phase 5 posts it).
+  # Empty = review hasn't run yet on this issue → run it fresh. Present = reload it
+  # instead of re-reviewing blind, and (if minor issues) show it to the user per Phase 6.
+  REVIEW_FINDINGS=$("$SKILL_DIR/scripts/find-artifact.sh" <number> "Review Findings")
   ```
 
   Re-derive `$BASE_BRANCH` and `$FEATURE_BRANCH` as usual (Between Phase 1 and Phase 2, Steps 1 and 3) — these are deterministic, not stored, so there's nothing to load for them. Then check whether the branch already has commits:
@@ -428,6 +432,22 @@ B) A numbered list of issues, each with: severity (blocking/minor), file:line, d
 Be strict — minor issues are worth flagging even if not blocking.
 ```
 
+### Persist the review outcome (before acting on it)
+
+The reviewer's result comes back only in *your* (the coordinator's) context. Unlike the implementation and tests, it is not committed to the branch — so no resuming session can reconstruct it from `git`, and it has no durable home unless you give it one. Persist it now, before Phase 6, as a GitHub **issue** comment (the PR does not exist yet), mirroring the clarification and plan artifacts so it is both user-visible and reloadable on resume:
+
+```bash
+gh issue comment <number> --body "$(cat <<'EOF'
+## Review Findings
+
+<verbatim reviewer output: either "LGTM — <summary>" or the numbered list of issues,
+each with severity (blocking/minor), file:line, description, and suggested fix>
+EOF
+)"
+```
+
+This is the artifact Phase 0 reloads when resuming at stage `review`/`ci`, and the exact text Phase 6 must show the user. Do not paraphrase it away or leave it only in conversation context.
+
 ---
 
 ## Phase 6: Decision
@@ -474,7 +494,13 @@ Report the situation to the user — it likely needs manual investigation.
 
 ### If review returns only minor issues:
 
-Show the findings to the user and ask: "Minor issues found — should I fix these too, or proceed to the PR?"
+Reproduce the numbered minor findings **in full** — verbatim from the `## Review Findings` comment you just posted — inside the *same message* where you ask how to proceed. Do not put them in a separate note before the question: text emitted between or before tool calls may never be surfaced to the user, so the findings must live in the final user-facing message alongside the question, not upstream of it. The user has to be able to read every finding and the question in one place:
+
+> Minor issues found:
+>
+> <the numbered list, verbatim>
+>
+> Should I fix these too, or proceed to the PR?
 
 ### If review returns LGTM:
 
