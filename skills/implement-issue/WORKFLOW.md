@@ -683,8 +683,11 @@ Best effort, non-blocking (same posture as the `state.sh` calls elsewhere): pers
 **First, capture whether the ledger is being seeded from empty** — do this *before* the `record-outcome.sh` write below, because that write adds this run's entry and an "is the ledger empty?" check afterward would never observe an empty ledger:
 
 ```bash
-# 0 when the ledger is absent or empty, else its current line count
-LEDGER_LINES=$( [[ -s .implement-issue/outcomes.jsonl ]] && wc -l < .implement-issue/outcomes.jsonl | tr -d ' ' || echo 0 )
+# 0 when the ledger is absent or empty, else its current line count.
+# Anchor to the git toplevel so the check reads the same file record-outcome.sh
+# writes, regardless of the current working directory.
+LEDGER="$(git rev-parse --show-toplevel)/.implement-issue/outcomes.jsonl"
+LEDGER_LINES=$( [[ -s "$LEDGER" ]] && wc -l < "$LEDGER" | tr -d ' ' || echo 0 )
 ```
 
 The record combines the Step 1 tallies above with the PR's diff stats:
