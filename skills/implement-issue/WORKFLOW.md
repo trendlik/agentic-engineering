@@ -676,6 +676,42 @@ Tally the following from this session:
 | CI fix iterations (Phase 7 loop) | N |
 | Stop-and-report exits (rebase conflicts, review cap, CI cap) | N |
 
+### Step 1b — Record the outcome ledger entry
+
+Best effort, non-blocking (same posture as the `state.sh` calls elsewhere): persist this run's signals into `.implement-issue/outcomes.jsonl` in the target repo via `scripts/record-outcome.sh`. If the call fails (no write access, disk issue, offline), log a warning and continue — do not let it stop the retrospective. This step exists so a future change-sizing step has a reference class of actual past runs to draw on; it stores raw signals only, no size judgment.
+
+The record combines the Step 1 tallies above with the PR's diff stats:
+
+```bash
+# outcome: from the Phase 7 final `gh pr view --json state,mergedAt` result
+#   MERGED -> merged, CLOSED (not merged) -> closed; on a stop-and-report
+#   exit (rebase conflict, review cap, CI cap) use aborted instead
+gh pr view <pr-number> --json state,mergedAt,additions,deletions,files,commits
+
+# files_changed / diff_loc / commits: from the PR stats above, or equivalently
+git -C <worktree_path> diff --stat <base_branch>...HEAD
+
+# wall_clock_hours: issue createdAt -> PR mergedAt, in hours
+gh issue view <number> --json createdAt
+
+"$SKILL_DIR/scripts/record-outcome.sh" <number> \
+  title="<issue title>" \
+  pr=<pr-number> \
+  labels="<issue's semantic labels, comma-separated — its stage:*/gate:* bookkeeping labels are not part of this>" \
+  outcome=merged \
+  plan_file_count=<count of files named in the approved Phase 2 plan> \
+  files_changed=<from gh pr view --json files> \
+  diff_loc=<additions + deletions from gh pr view> \
+  commits=<from gh pr view --json commits> \
+  clarify_rounds=<Step 1 tally> \
+  plan_revisions=<Step 1 tally> \
+  review_loops=<Step 1 tally> \
+  ci_fixes=<Step 1 tally> \
+  wall_clock_hours=<issue createdAt -> PR mergedAt, in hours>
+```
+
+On a stop-and-report exit (no PR merged), still write a record with `outcome=aborted` and whatever fields are actually known (e.g. `pr`, `diff_loc`, and `wall_clock_hours` may be unavailable if no PR was ever opened) — leave the rest null rather than guessing.
+
 ### Step 2 — Diagnose bottlenecks
 
 For each signal with count ≥ 1, identify the root cause. Map each cause to one of these categories:
