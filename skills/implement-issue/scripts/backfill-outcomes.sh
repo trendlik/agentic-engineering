@@ -9,6 +9,15 @@
 #     `gh pr view --json ...` blob from disk, prints ONE ledger JSON record
 #     to stdout. This is the unit-tested path.
 #
+#   backfill-outcomes.sh closes-issue <issue-number>
+#     Pure, offline: reads a PR body on stdin, exits 0 if it contains a
+#     standard GitHub closing keyword (close/closes/closed, fix/fixes/fixed,
+#     resolve/resolves/resolved; case-insensitive) immediately referencing
+#     `#<issue-number>` (e.g. "Closes #42", "fixes: #42"), exits 1 otherwise.
+#     A bare "#42" mention that isn't a closing reference does not match.
+#     Used by `run` to filter search-API candidates down to the PR that
+#     actually closes the issue.
+#
 #   backfill-outcomes.sh run [--dry-run]
 #     Requires gh. Finds issues carrying a stage:* label, locates each one's
 #     merged/closed PR, fetches the JSON `extract` needs, and either prints
@@ -56,8 +65,10 @@ cmd_extract() {
     (
       if ($pr.additions != null and $pr.deletions != null) then
         ($pr.additions + $pr.deletions)
+      elif ($files | length) > 0 then
+        ($files | map((.additions // 0) + (.deletions // 0)) | add)
       else
-        ($files | map((.additions // 0) + (.deletions // 0)) | add // 0)
+        null
       end
     ) as $diff_loc |
     (
@@ -94,6 +105,26 @@ cmd_extract() {
     ' || die "failed to extract record from $issue_file / $pr_file"
 }
 
+# Standard GitHub closing keywords (case-insensitive), grouped by tense.
+CLOSING_KEYWORDS="close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved"
+
+cmd_closes_issue() {
+  local n=${1:?usage: backfill-outcomes.sh closes-issue <issue-number> (PR body on stdin)}
+  [[ "$n" =~ ^[0-9]+$ ]] || die "issue number must be a non-negative integer, got: '$n'"
+  local body
+  body=$(cat)
+  # Match a closing keyword not itself preceded by a letter (so "enclose" or
+  # "prefix" don't count as "close"/"fix"), followed by an optional colon and
+  # whitespace, then "#<n>" not followed by another digit (so "#42" doesn't
+  # match inside "#420"). jq's test() (Oniguruma) supports the lookahead and
+  # case-insensitive flag this needs; kept here instead of bash's [[ =~ ]] so
+  # the same regex engine is used offline (tests) and against real PR bodies.
+  local matched
+  matched=$(jq -n --arg body "$body" --arg re "(^|[^A-Za-z])(${CLOSING_KEYWORDS})(:)?\\s+#${n}(?!\\d)" \
+    '$body | test($re; "i")') || die "closes-issue: regex match failed"
+  [[ "$matched" == "true" ]]
+}
+
 cmd_run() {
   local dry_run=0
   [[ "${1:-}" == "--dry-run" ]] && dry_run=1
@@ -113,8 +144,21 @@ cmd_run() {
     [[ -z "$n" ]] && continue
     info "issue #$n: looking for its merged/closed PR"
 
-    local pr_number
-    pr_number=$(gh pr list --state all --search "Closes #$n in:body" --json number -q '.[0].number' 2>/dev/null)
+    # Cast a wide net with the search API (any PR mentioning "#$n"), then
+    # filter to the ones that actually close the issue via a standard GitHub
+    # closing keyword (see cmd_closes_issue) — a bare "#$n" mention elsewhere
+    # in the body must not count.
+    local candidates pr_number=""
+    candidates=$(gh pr list --state all --search "#$n in:body" --json number,body 2>/dev/null) || candidates="[]"
+    local entry cand_body
+    while IFS= read -r entry; do
+      [[ -z "$entry" ]] && continue
+      cand_body=$(jq -r '.body // ""' <<<"$entry")
+      if printf '%s' "$cand_body" | cmd_closes_issue "$n"; then
+        pr_number=$(jq -r '.number' <<<"$entry")
+        break
+      fi
+    done < <(jq -c '.[]' <<<"$candidates" 2>/dev/null)
     if [[ -z "$pr_number" || "$pr_number" == "null" ]]; then
       warn "issue #$n: no matching PR found, skipping"
       continue
@@ -159,7 +203,9 @@ cmd_run() {
 
     # Convert the record into key=value args for record-outcome.sh, letting
     # it re-derive recorded_at/skill_sha fresh at write time (issue and the
-    # two auto-filled fields are excluded here).
+    # two auto-filled fields are excluded here). Labels are joined on "," for
+    # record-outcome.sh's labels= convention; per its header comment, a label
+    # name containing a comma is not representable this way and will split.
     local args=()
     while IFS= read -r -d '' kv; do
       args+=("$kv")
@@ -186,11 +232,12 @@ cmd_run() {
 }
 
 cmd=${1:-}
-[[ -n "$cmd" ]] || die "usage: backfill-outcomes.sh <extract|run> ..."
+[[ -n "$cmd" ]] || die "usage: backfill-outcomes.sh <extract|closes-issue|run> ..."
 shift
 
 case "$cmd" in
   extract) cmd_extract "$@" ;;
+  closes-issue) cmd_closes_issue "$@" ;;
   run) cmd_run "$@" ;;
-  *) die "unknown subcommand '$cmd' (valid: extract, run)" ;;
+  *) die "unknown subcommand '$cmd' (valid: extract, closes-issue, run)" ;;
 esac

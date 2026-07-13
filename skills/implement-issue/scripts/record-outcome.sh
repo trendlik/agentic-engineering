@@ -16,7 +16,8 @@
 # - `issue` is also given positionally (first arg) and must be a
 #   non-negative integer.
 # - `labels` is a comma-separated string, stored as a JSON array (empty
-#   string -> empty array).
+#   string -> empty array). Limitation: a label name containing a comma
+#   cannot be represented this way and will be split into bogus entries.
 # - `outcome` must be one of: merged, closed, aborted.
 # - Any known key not supplied is written as JSON null.
 # - `recorded_at` defaults to today (`date +%F`); `skill_sha` defaults to
@@ -49,7 +50,9 @@ is_int_key() {
   return 1
 }
 
-is_integer() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
+# All keys validated with is_integer (issue + INT_KEYS) are counts, so
+# negatives are always invalid — no ledger field is signed.
+is_integer() { [[ "$1" =~ ^[0-9]+$ ]]; }
 is_number()  { [[ "$1" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; }
 
 [[ $# -ge 1 ]] || die "usage: record-outcome.sh <issue> key=value [key=value ...]"
@@ -122,6 +125,12 @@ if [[ $labels_given -eq 1 ]]; then
   if [[ -z "$labels_raw" ]]; then
     labels_json="[]"
   else
+    # Known limitation: labels is a single comma-joined string split on ",".
+    # A GitHub label name that itself contains a comma is not representable
+    # in this form and will be split into bogus entries; leading/trailing
+    # whitespace around each split element is trimmed, but not commas within
+    # one. Fixing this would need a different arg convention (e.g. repeated
+    # --label flags) — out of scope here.
     labels_json=$(printf '%s' "$labels_raw" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";""))')
   fi
   jq_args+=(--argjson labels "$labels_json")

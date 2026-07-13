@@ -120,5 +120,29 @@ EOF
 rec_fallback=$("$BACKFILL" extract "$issue_merged" "$pr_fallback")
 assert_eq "$(jq -r '.diff_loc' <<<"$rec_fallback")" "24" "diff_loc falls back to summed per-file additions+deletions when PR-level totals are absent"
 
+# --- diff_loc fallback: no PR-level totals AND no file data -> null -------
+pr_nodiff="$fixtures/pr-nodiff.json"
+cat >"$pr_nodiff" <<'EOF'
+{
+  "number": 103,
+  "mergedAt": "2024-01-01T01:00:00Z",
+  "files": [],
+  "commits": [{"messageHeadline": "fix", "messageBody": ""}],
+  "state": "MERGED"
+}
+EOF
+
+rec_nodiff=$("$BACKFILL" extract "$issue_merged" "$pr_nodiff")
+assert_eq "$(jq -r '.diff_loc' <<<"$rec_nodiff")" "null" "diff_loc is null (not 0) when neither PR-level nor per-file diff data exists"
+
+# --- closes-issue: filters real closing keywords from bare mentions -------
+assert_success "closes-issue: 'Closes #42' matches" bash -c "printf 'Closes #42' | \"$BACKFILL\" closes-issue 42"
+assert_success "closes-issue: 'fixes: #42' matches (colon variant)" bash -c "printf 'fixes: #42' | \"$BACKFILL\" closes-issue 42"
+assert_success "closes-issue: 'This PR resolves #42 nicely' matches" bash -c "printf 'This PR resolves #42 nicely' | \"$BACKFILL\" closes-issue 42"
+assert_success "closes-issue: keyword match is case-insensitive" bash -c "printf 'FIXES #42' | \"$BACKFILL\" closes-issue 42"
+assert_failure "closes-issue: bare '#42' mention (no keyword) does not match" bash -c "printf 'See #42 for context' | \"$BACKFILL\" closes-issue 42"
+assert_failure "closes-issue: '#420' does not match issue 42 (no trailing-digit false match)" bash -c "printf 'Closes #420' | \"$BACKFILL\" closes-issue 42"
+assert_failure "closes-issue: 'enclose #42' does not match ('close' as substring of another word)" bash -c "printf 'enclose #42' | \"$BACKFILL\" closes-issue 42"
+
 echo "backfill-outcomes.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

@@ -76,6 +76,8 @@ assert_failure "invalid outcome value is rejected" env OUTCOMES_FILE="$ledger" "
 assert_failure "non-integer issue is rejected" env OUTCOMES_FILE="$ledger" "$RECORD" abc title=x
 assert_failure "negative issue is rejected" env OUTCOMES_FILE="$ledger" "$RECORD" -1 title=x
 assert_failure "non-integer numeric field is rejected" env OUTCOMES_FILE="$ledger" "$RECORD" 20 diff_loc=1.5
+assert_failure "negative count field (diff_loc) is rejected" env OUTCOMES_FILE="$ledger" "$RECORD" 20 diff_loc=-5
+assert_failure "negative count field (files_changed) is rejected" env OUTCOMES_FILE="$ledger" "$RECORD" 20 files_changed=-1
 assert_success "wall_clock_hours accepts a float" env OUTCOMES_FILE="$ledger" "$RECORD" 20 wall_clock_hours=1.5
 rm -f "$ledger"
 
