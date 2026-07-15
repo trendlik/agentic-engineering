@@ -1,1 +1,4 @@
 .DS_Store
+
+# Agent worktrees are ephemeral, per-run checkouts — never track them.
+.claude/worktrees/
