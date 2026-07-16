@@ -1,14 +1,42 @@
-# Onboarding a project to `implement-issue`
+# Installing & onboarding `implement-issue`
 
-How to make a target repository compatible with the `implement-issue` skill.
-The skill needs surprisingly little: a small set of **hard requirements**, then a
-ladder of **optional layers** that unlock more of the workflow (cross-session
-resume, gate enforcement, change-sizing data). Nothing here requires editing the
-skill itself — everything lives in the target project or the local toolchain.
+The complete setup path, start to finish: install the skill on your machine, then
+make a target repository compatible with it. The skill needs surprisingly little
+— a small set of **hard requirements**, then a ladder of **optional layers** that
+unlock more of the workflow (cross-session resume, gate enforcement, change-sizing
+data). Nothing here requires editing the skill itself — everything lives in the
+target project or the local toolchain.
 
-Paths below assume the skill is installed at `~/.claude/skills/implement-issue`.
-If it's reached via a different adapter, substitute that path (e.g.
-`~/.gemini/config/skills/implement-issue`).
+## Install the skill
+
+The skill is made available globally by symlinking it into your agent's skills
+directory. Clone the [`agentic-engineering`](../../) repo anywhere, then `cd` into
+it — the commands below run from the repo root, where `$PWD` resolves the absolute
+path the symlink needs, wherever you cloned it.
+
+```bash
+git clone <remote-url> agentic-engineering
+cd agentic-engineering
+```
+
+**For Claude Code:**
+```bash
+ln -s "$PWD/skills/implement-issue" ~/.claude/skills/implement-issue
+```
+
+**For Google Antigravity (Gemini):**
+```bash
+mkdir -p ~/.gemini/config/skills
+ln -s "$PWD/skills/implement-issue" ~/.gemini/config/skills/implement-issue
+```
+
+The symlink keeps the skill available across all projects while the real files
+stay versioned in the repo. To install every skill in the repo at once, loop over
+`skills/*/` and symlink each into the same target directory.
+
+The commands below assume the skill is reachable at
+`~/.claude/skills/implement-issue`. If you installed via a different adapter,
+substitute that path (e.g. `~/.gemini/config/skills/implement-issue`).
 
 ## Quick checklist
 
