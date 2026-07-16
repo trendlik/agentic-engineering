@@ -34,6 +34,10 @@ The symlink keeps the skill available across all projects while the real files
 stay versioned in the repo. To install every skill in the repo at once, loop over
 `skills/*/` and symlink each into the same target directory.
 
+> **Windows:** these commands and the skill's `*.sh` scripts assume a Unix-style
+> shell (`bash`, `git`, `gh`, `jq`) and won't run under native `cmd`/PowerShell.
+> Use **WSL** or **Git Bash**. This path hasn't been tested on Windows.
+
 The commands below assume the skill is reachable at
 `~/.claude/skills/implement-issue`. If you installed via a different adapter,
 substitute that path (e.g. `~/.gemini/config/skills/implement-issue`).
