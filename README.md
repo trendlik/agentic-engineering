@@ -11,7 +11,9 @@ versioned here.
 
 ### Installed skills
 
-- `implement-issue` — structured clarify → plan → implement → test → review → PR → CI loop.
+- `implement-issue` — runs an issue from ticket to merged PR: agents do the work,
+  humans approve at the key gates. Phases: clarify → plan → implement → test →
+  review → PR → CI-fix loop → retrospective.
   Full setup, start to finish (install the skill, then onboard a project), lives in
   [`ONBOARDING.md`](skills/implement-issue/ONBOARDING.md).
 
