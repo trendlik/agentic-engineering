@@ -53,6 +53,7 @@ Recommended:
   [ ] branch convention documented in CLAUDE.md/AGENTS.md (or usable labels)
 
 Optional:
+  [ ] permission allowlist synced (sync-permissions.sh) for prompt-free runs
   [ ] push access so stage:*/gate:* labels can be written (resume support)
   [ ] .github/workflows/implement-issue-gate.yml + SKILL_REPO_TOKEN + required check
   [ ] outcomes.jsonl backfilled from existing merged history
@@ -128,7 +129,40 @@ To make the default work well, use recognizable issue labels:
 - `docs` → `docs/`
 - anything else → `feat/`
 
-## 4. Optional: workflow-state labels (enables cross-session resume)
+## 4. Optional: permission allowlist (prompt-free, unattended runs)
+
+By default a run halts whenever the coordinator *or one of its sub-agents* hits a
+tool that isn't pre-approved — most often a file **edit** in the worktree, not a
+bash call. Those interactive prompts defeat the skill's AFK/hand-off design (a
+run meant to be picked up by another session shouldn't block on a click) and make
+approval latency pollute any per-phase timing, since the wait lands invisibly
+*inside* an agent's span. Sync the recommended allowlist to run prompt-free:
+
+```bash
+~/.claude/skills/implement-issue/scripts/sync-permissions.sh            # install
+~/.claude/skills/implement-issue/scripts/sync-permissions.sh --dry-run  # preview
+```
+
+It merges `templates/settings.allow.json` into the target repo's **git-ignored**
+`.claude/settings.local.json` (the correct home for the absolute, machine-specific
+paths these rules resolve to), idempotently and without touching other settings
+keys. `settings.json` allow rules apply to sub-agents too, so this covers the
+Phase 3/4/5/7 agents, not just the coordinator. `doctor.sh` reports (advisory
+only) whether it's installed.
+
+It deliberately does **not** grant project-specific commands — the build/test
+surface (`Bash(npm run *)`, `Bash(pytest:*)`, …) and, only for repos with a
+Dockerfile, the Phase 4 container smoke test (`Bash(docker build:*)`,
+`Bash(docker run:*)`, since `docker run` can mount the host filesystem). Add those
+per-repo, or capture them via the Phase 8 retrospective into `LEARNINGS.md`.
+
+Security note: this trades human approval for autonomy. File writes are scoped to
+the `worktrees/**` subtree, but `git`/`gh` are broad grants that also fire for
+sub-agents — adopt it deliberately. Verify the rules match with `/permissions`
+after syncing; a residual prompt is a useful signal that a run went
+non-autonomous, not something to silence with `bypassPermissions`.
+
+## 5. Optional: workflow-state labels (enables cross-session resume)
 
 The skill records each issue's stage (`stage:clarify` … `stage:done`) and gate
 approvals (`gate:analysis-approved`, `gate:plan-approved`) as GitHub labels. This
@@ -141,7 +175,7 @@ best-effort (a failure only logs a warning); reading it is what powers resume. I
 the token is read-only or labels are disabled, the skill still works — you just
 lose resumability.
 
-## 5. Optional: CI gate enforcement
+## 6. Optional: CI gate enforcement
 
 To *block* PRs from merging until their linked issue has both gate approvals, add
 the enforcement workflow:
@@ -173,7 +207,7 @@ so confirm with whoever owns branch protection first. Note it's a **presence
 check** (the labels exist), not an identity check; to see *who* approved a gate,
 read the issue's label history in the GitHub UI.
 
-## 6. Optional: outcome ledger (for future change-sizing)
+## 7. Optional: outcome ledger (for future change-sizing)
 
 Phase 8 appends one line per run to `.implement-issue/outcomes.jsonl` (size and
 friction signals per completed issue). It's created automatically on first run.
