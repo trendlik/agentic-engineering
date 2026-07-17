@@ -31,6 +31,20 @@ check "gh authenticated"         gh auth status
 check "inside a git repository"  git rev-parse --is-inside-work-tree
 check "origin is a GitHub repo"  gh repo view
 
+# Advisory only (never fails the check): the recommended permission allowlist
+# lets a run — coordinator and sub-agents — proceed without approval prompts.
+# The skill works without it; it just prompts more. See sync-permissions.sh.
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null)
+if [[ -n "$repo_root" ]]; then
+  local_settings="$repo_root/.claude/settings.local.json"
+  if [[ -f "$local_settings" ]] && grep -q '/\.claude/worktrees/\*\*' "$local_settings" 2>/dev/null; then
+    ok "OK    permission allowlist installed (settings.local.json)"
+  else
+    info "INFO  permission allowlist not installed (optional) — run to reduce approval prompts:"
+    info "        $DIR/sync-permissions.sh"
+  fi
+fi
+
 echo "---"
 if [[ $fail -eq 0 ]]; then
   ok "All checks passed — implement-issue is ready to use here."

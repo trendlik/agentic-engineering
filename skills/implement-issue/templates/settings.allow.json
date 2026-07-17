@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(jq:*)",
+      "Bash(__SKILL_DIR__/scripts/state.sh:*)",
+      "Bash(__SKILL_DIR__/scripts/sync-base.sh:*)",
+      "Bash(__SKILL_DIR__/scripts/derive-branch.sh:*)",
+      "Bash(__SKILL_DIR__/scripts/find-artifact.sh:*)",
+      "Bash(__SKILL_DIR__/scripts/gate.sh:*)",
+      "Bash(__SKILL_DIR__/scripts/record-outcome.sh:*)",
+      "Edit(/__REPO_ROOT__/.claude/worktrees/**)",
+      "Write(/__REPO_ROOT__/.claude/worktrees/**)"
+    ]
+  }
+}

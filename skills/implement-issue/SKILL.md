@@ -64,6 +64,7 @@ If it exists, read it once now. Each phase in WORKFLOW.md consumes only its own 
 | Script | Replaces | Used in |
 |---|---|---|
 | `doctor.sh` | — (new) | new-machine setup |
+| `sync-permissions.sh` | — (new) | optional per-repo setup — installs the approval allowlist |
 | `sync-base.sh` | manual `git remote show origin` / fetch / rebase | Between Phase 1 and 2 |
 | `derive-branch.sh <issue>` | inline label→prefix + slugify heuristic | Between Phase 1 and 2 |
 | `state.sh` | — (new) | stage/gate bookkeeping at every phase transition; read by Phase 0 to dispatch |
@@ -86,6 +87,19 @@ To turn this on for a project:
 2. In the target repo's branch protection settings, add `implement-issue-gate` as a required status check.
 
 Step 1 just makes the check *run* (informational, visible on the PR, not blocking). Step 2 is what makes it actually enforce — and it's a repo-admin action with real consequences for collaborators, so treat it deliberately: confirm with whoever owns the target repo's branch protection before adding it.
+
+## Permission allowlist (`settings.local.json`)
+
+A run blocks whenever the coordinator or a sub-agent hits a tool that isn't pre-approved — most often a file **edit** in the worktree, not a bash call. Those interactive prompts defeat the skill's AFK/hand-off design and pollute any attempt to measure agent time (the approval wait lands invisibly *inside* an agent span). `scripts/sync-permissions.sh` installs the recommended allowlist so runs proceed prompt-free:
+
+```bash
+$SKILL_DIR/scripts/sync-permissions.sh            # writes to $repo/.claude/settings.local.json
+$SKILL_DIR/scripts/sync-permissions.sh --dry-run  # preview
+```
+
+It merges `templates/settings.allow.json` into the target repo's `.claude/settings.local.json` (git-ignored, per-machine — the correct home for the absolute, machine-specific paths these rules resolve to), idempotently and without touching other settings keys. `settings.json` allow rules apply to sub-agents too, so this covers the Phase 3/4/5/7 agents, not just the coordinator. `doctor.sh` reports (advisory only) whether it's installed.
+
+What it deliberately does **not** add: project-specific commands that vary per repo and are unknowable here — the build/test/type-check surface (`Bash(npm run *)`, `Bash(pytest:*)`, etc.) and, only for repos with a Dockerfile, the Phase 4 container smoke test (`Bash(docker build:*)`, `Bash(docker run:*)`). `docker run` can mount the host filesystem, so it's not granted to every repo by default — add it per-repo where the container path is actually exercised. Capture any of these yourself or via the Phase 8 retrospective into `LEARNINGS.md`. Finally, whether Claude Code matches an absolute-path Bash rule depends on its version — verify with `/permissions` after syncing; a residual prompt is a useful signal that a run went non-autonomous, not something to paper over with `bypassPermissions`.
 
 ## Project learnings (`.implement-issue/LEARNINGS.md`)
 
