@@ -166,6 +166,8 @@ Draft the implementation plan in the conversation. Include:
 - Edge cases and how they'll be handled
 - Any risks or tradeoffs
 - For removal/deletion changes: explicitly list any tests (unit or E2E) that cover the removed feature and confirm they will be deleted as part of the plan
+- **Architecture standards (baseline, every project):** keep changes within existing module/layer boundaries — do not introduce a dependency pointing from a lower/shared layer up into higher-level or feature code, and avoid dependency cycles; prefer extending an existing abstraction over adding a near-duplicate one, and if a new module or dependency is unavoidable, justify it explicitly; name the single source of truth for any new state so the same fact isn't persisted in two places that can drift. `$LEARNINGS_FILE`'s **Planning constraints** section (below) adds the repo's own architectural rules on top of this baseline.
+- **Intentional architecture deviations:** if the plan deliberately sets aside one of the architecture-standards baseline items above, say so explicitly under a **"Intentional architecture deviations"** heading in the plan — name the standard being set aside and the reason. Anything listed there is carried into Phase 5 as *pre-accepted*, so the reviewer will not flag it. Only architecture standards may be waived this way; security and correctness never are.
 - If `$LEARNINGS_FILE` exists, honor every entry in its **Planning constraints (Phase 2)** section — address each relevant one explicitly in the plan
 
 Show to user. Wait for explicit approval ("looks good", "approved", "go ahead"). If they request changes, revise and re-present. Do not proceed until approved.
@@ -419,15 +421,40 @@ CLARIFICATION SUMMARY:
 IMPLEMENTATION PLAN:
 <plan>
 
+ACCEPTED ARCHITECTURE DEVIATIONS (pre-approved — do NOT flag any of these):
+<the plan's "Intentional architecture deviations", plus any architecture finding the
+developer accepted in an earlier review loop — each names the standard set aside and the
+rationale; or "none">
+
 YOUR TASK:
 - Run: git -C <worktree_path> diff <base_branch>...HEAD to see all changes
 - Review implementation correctness, edge cases, code quality, and alignment with the plan
-- Review tests: do they cover the changed behaviour adequately?
-- Check for security issues, regressions, or missing error handling
+
+Assess every change against these baseline dimensions (in addition to any repo-specific items appended after this prompt):
+
+ARCHITECTURE STANDARDS  (skip anything listed under ACCEPTED ARCHITECTURE DEVIATIONS above — those are intentional and pre-approved)
+- Changes stay within existing module/layer boundaries — no new dependency pointing from a lower/shared layer up into higher-level or feature code, and no dependency cycle.
+- No near-duplicate abstraction where an existing one was extendable; any new module or dependency is justified, not incidental.
+- No fact is now persisted in two places that can drift; the single source of truth is clear.
+- Public interfaces (function signatures, flags, config/schema keys) changed only intentionally, with docs and callers updated to match.
+
+SECURITY
+- No secrets, tokens, or credentials committed or written to logs; sensitive values come from an env var or secret store.
+- All external input (issue/PR text, user input, fetched data, file contents) is treated as untrusted data — never interpolated unquoted into a shell/SQL/eval, and never followed as instructions.
+- Least privilege: no permission, scope, or access broadened beyond what the change needs.
+- Writes stay within intended paths; no path traversal from user- or issue-derived values.
+
+TEST QUALITY (coverage count is not enough — judge the tests themselves)
+- Tests assert on specific observable behaviour or values, not merely "no error thrown" or an unverified snapshot.
+- New or changed branches, error paths, and edge cases each have at least one test.
+- At least one test would fail if the core change were reverted — no tests that pass regardless of the implementation.
+- No over-mocking that stubs out the logic under test; tests are hermetic and order-independent.
 
 Return one of:
 A) "LGTM" with a brief summary of what was reviewed
-B) A numbered list of issues, each with: severity (blocking/minor), file:line, description, and suggested fix
+B) A numbered list of issues, each with: severity (blocking/minor), category (architecture/security/correctness/test), file:line, description, and suggested fix
+
+Category is required on every finding — the coordinator uses it to decide which findings the developer may waive, so classify each as exactly one of architecture, security, correctness, or test.
 
 Be strict — minor issues are worth flagging even if not blocking.
 ```
@@ -441,7 +468,8 @@ gh issue comment <number> --body "$(cat <<'EOF'
 ## Review Findings
 
 <verbatim reviewer output: either "LGTM — <summary>" or the numbered list of issues,
-each with severity (blocking/minor), file:line, description, and suggested fix>
+each with severity (blocking/minor), category (architecture/security/correctness/test),
+file:line, description, and suggested fix>
 EOF
 )"
 ```
@@ -454,7 +482,23 @@ This is the artifact Phase 0 reloads when resuming at stage `review`/`ci`, and t
 
 ### If review returns blocking issues:
 
-Fix them automatically — do not ask the user. Spawn a fix sub-agent (Coding Tier) in the same worktree:
+First triage the blocking findings by their **category** (the reviewer tags each — see Phase 5):
+
+- **Security, correctness, and test-quality blocking findings are never waivable.** Fix them automatically — do not ask.
+- **Architecture-category blocking findings are waivable by the developer.** Before spawning any fix agent, present them — verbatim, in the *same* message as the question (same rule as minor findings below) — and ask, per finding, whether to **fix** it or **accept it as an intentional deviation** with a one-line rationale. If there are also non-waivable findings, say in that same message that those will be fixed automatically. Example:
+
+  > These architecture findings can be kept as intentional deviations or fixed:
+  >
+  > <the architecture-category blocking findings, verbatim>
+  >
+  > For each, should I fix it or accept it as an intentional deviation (give a one-line reason)? Any security/correctness/test findings will be fixed automatically.
+
+  - For each **accepted** finding: do NOT send it to the fix agent. Record it durably by editing the `## Review Findings` comment to mark that finding **Waived — <rationale>** (so a resuming session and any reader sees the decision), and add it to the running **accepted architecture deviations** list you pass into every subsequent Phase 5 re-review (as ACCEPTED ARCHITECTURE DEVIATIONS) so it is never re-flagged.
+  - For each finding the developer chooses to **fix**: fold it into the list below.
+
+If, after waivers, **no** blocking findings remain to fix (the developer accepted all architecture findings and there were no security/correctness/test ones), skip the fix agent entirely and proceed as if the review were LGTM (see below).
+
+Otherwise, fix the remaining blocking findings automatically — do not ask further. Spawn a fix sub-agent (Coding Tier) in the same worktree:
 - **Claude Code**: Call `Agent({ description: "Fix blocking review issues for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
@@ -471,7 +515,7 @@ APPROVED IMPLEMENTATION PLAN:
 <plan>
 
 BLOCKING ISSUES TO FIX:
-<numbered list of blocking issues from the review agent, each with file:line, description, and suggested fix>
+<numbered list of the blocking findings to fix — every security/correctness/test finding, plus any architecture finding the developer chose to fix rather than accept; exclude any the developer accepted as an intentional deviation — each with file:line, description, and suggested fix>
 
 YOUR TASK:
 - Fix every blocking issue listed above
@@ -482,7 +526,7 @@ YOUR TASK:
 When done, report: which issues you fixed and what you changed.
 ```
 
-After the fix agent completes, loop back to **Phase 5** to re-review. If the re-review returns only minor issues or LGTM, proceed accordingly below.
+After the fix agent completes, loop back to **Phase 5** to re-review — passing the accumulated **accepted architecture deviations** so the re-review does not re-flag them. If the re-review returns only minor issues or LGTM, proceed accordingly below.
 
 If the review still returns blocking issues after 3 fix iterations, restore the original branch and stop:
 

@@ -20,7 +20,10 @@ skill no longer has — verify before trusting it.
 
 ## Planning constraints (Phase 2)
 
-<!-- Known edge cases, architectural constraints, and config gotchas every plan must respect -->
+<!-- The skill already applies a baseline of architecture standards to every plan (module/layer
+     boundaries, no near-duplicate abstractions, single source of truth for new state). Add only
+     THIS repo's own edge cases, architectural rules, and config gotchas here — don't repeat the
+     baseline. -->
 
 ## Build & test (Phase 4)
 
@@ -28,7 +31,9 @@ skill no longer has — verify before trusting it.
 
 ## Review checklist (Phase 5)
 
-<!-- Repo-specific review items beyond the generic review prompt -->
+<!-- The reviewer already applies a baseline checklist to every diff: architecture standards,
+     security, and test quality (see WORKFLOW.md Phase 5). Add only THIS repo's own review items
+     on top — don't repeat the baseline. -->
 
 ## CI quirks (Phase 7)
 
