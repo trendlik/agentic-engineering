@@ -14,6 +14,8 @@ versioned here.
 - `implement-issue` — runs an issue from ticket to merged PR: agents do the work,
   humans approve at the key gates. Phases: clarify → plan → implement → test →
   review → PR → CI-fix loop → retrospective.
+  Runs in an isolated git worktree by default; pass `--local` to work directly in
+  your checkout and review each phase's changes in your editor before they're committed.
   Full setup, start to finish (install the skill, then onboard a project), lives in
   [`ONBOARDING.md`](skills/implement-issue/ONBOARDING.md).
 
