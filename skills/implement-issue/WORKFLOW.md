@@ -18,8 +18,33 @@ Once `$WORK_DIR` is set, every `git -C "$WORK_DIR" …` command and every sub-ag
 2. **Phase 4 worktree-prerequisites block** — worktree mode only (a fresh worktree lacks installed deps and git-ignored files); skipped in local mode, where the checkout already has both.
 3. **`$ORIGINAL_BRANCH` restore** — from Phase 3 onward, local mode has checked out `$FEATURE_BRANCH` *in the main checkout*, so the `git checkout $ORIGINAL_BRANCH` / "restore `$ORIGINAL_BRANCH`" steps become **no-ops you skip in local mode** — stay on `$FEATURE_BRANCH` (the work is pushed; the PR, once opened, references it). Worktree mode restores as written, since there the main checkout never left `$ORIGINAL_BRANCH`. Before Phase 3 (the Phase 1/2 stop checkpoints) no branch switch has happened in either mode, so those restores are harmless either way.
 4. **Worktree teardown** — "remove the worktree" on any exit path applies to worktree mode only; local mode has no worktree to remove.
+5. **Commit timing** — worktree mode has each sub-agent commit its own work and the coordinator push at every phase boundary (required for cross-session resume, which reads the remote). Local mode **defers the commit to the approval gate**: the Phase 3 and Phase 4 sub-agents leave their changes uncommitted in `$WORK_DIR`, and the commit + push happen only when the human approves moving on — so the human can review each phase's changed files in their editor *before* anything is committed. See "Local-mode review gate" below.
 
 **Local-mode precondition (checked before Phase 3):** the working tree must be clean — `git status --porcelain` empty. Local mode checks out `$FEATURE_BRANCH` in place, which collides with uncommitted changes. If it's dirty, stop and ask the user to commit or stash first before continuing.
+
+### Local-mode review gate
+
+Local mode exists so the human can review each phase's changes *before* they're committed. So in local mode the Phase 3 and Phase 4 sub-agents do **not** commit — they leave their work uncommitted in `$WORK_DIR` on `$FEATURE_BRANCH` and report a *suggested* commit message. At that phase's checkpoint, run this gate in place of the worktree-mode "already committed and pushed" checkpoint:
+
+1. **Surface the changes for review.** List the changed files as clickable paths and show the diff shape:
+   ```bash
+   git -C "$WORK_DIR" status --short
+   git -C "$WORK_DIR" diff --stat
+   ```
+   Tell the human the changes are uncommitted on `$FEATURE_BRANCH` and to open their editor's source-control view to read them — nothing is committed yet.
+2. **Ask that phase's checkpoint question** — worded for local mode (uncommitted-for-review, not "committed and pushed"): approve / request changes / stop.
+3. **Act on the answer:**
+   - **Approve** — commit exactly the tree the human just reviewed, push, then record state and continue to the next phase:
+     ```bash
+     git -C "$WORK_DIR" add -A
+     git -C "$WORK_DIR" commit -m "<the sub-agent's suggested message, in the phase's \"<type>: <description> (#<number>)\" form>"
+     git -C "$WORK_DIR" push -u origin HEAD:<feature_branch>
+     ```
+     Then run that phase's best-effort `state.sh set` call. If the tree is already clean (a phase produced no changes — e.g. the `$RUN_E2E=false` build-only path), there is nothing to commit: just confirm and proceed.
+   - **Request changes** — re-run the phase's sub-agent on the still-dirty tree with the human's feedback (no revert or amend — nothing is committed), then return to step 1.
+   - **Stop** — a stop is a handoff, so it must be persisted: run the same commit + push + `state.sh set` as Approve, then end. Stay on `$FEATURE_BRANCH` (do not restore `$ORIGINAL_BRANCH`, per divergence 3).
+
+Because the commit lands on approval, every later phase still starts from a clean, committed base — the per-phase clean-tree assumption and Phase 5's `base...HEAD` review diff are unaffected. The only window where changes live solely in the working tree is the human's active review; that window is not crash-safe across sessions, an accepted trade for local mode's single-session, human-present workflow.
 
 ---
 
@@ -257,6 +282,8 @@ Spawn an implementation sub-agent using your platform's sub-agent tool (Coding T
   - Local mode: `Agent({ description: "Implement issue #<number>", model: "sonnet", prompt: <prompt> })` — no `isolation`, so the sub-agent works in the main checkout you just placed on `$FEATURE_BRANCH`.
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Implementer"`, `Workspace: "branch"` (or `"share"`) in worktree mode / `"inherit"` in local mode, and the `Prompt` below.
 
+The prompt template below is written for worktree mode (the sub-agent commits its own work). **In local mode**, when you build the prompt, replace the "Commit your changes …" task bullet with: *"Do NOT commit — leave all changes uncommitted in the working tree so the human can review them, and instead report a suggested commit message in the form `<type>: <description> (#<number>)` for the coordinator to use on approval."* (deferred-commit model — divergence 5). The type-check bullet still applies: the sub-agent validates before reporting, it just doesn't commit.
+
 **Prompt / Configuration:**
 ```
 You are implementing GitHub issue #<number> on branch `<feature_branch>` (derived from the project's branching strategy — use this exact name for commits and any git operations).
@@ -294,7 +321,7 @@ When done, report: what files you changed and a brief summary of what you implem
 
 In worktree mode the agent result includes the worktree path — **save it as `$WORK_DIR`** (with the branch name); you need it for Phases 4 and 5. In local mode `$WORK_DIR` is already the repo root, so there is nothing new to capture.
 
-Push the branch so it's visible to anyone resuming, regardless of whether you continue in this session or not — commits sitting only in your local checkout aren't recoverable by Phase 0's resume logic, which checks the remote:
+**(Worktree mode)** Push the branch so it's visible to anyone resuming, regardless of whether you continue in this session or not — commits sitting only in your local checkout aren't recoverable by Phase 0's resume logic, which checks the remote:
 
 ```bash
 git -C $WORK_DIR push -u origin HEAD:<feature_branch>
@@ -302,14 +329,24 @@ git -C $WORK_DIR push -u origin HEAD:<feature_branch>
 
 Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> test`
 
+**(Local mode)** Do not push or set state here — the implementation is still uncommitted for review. The Local-mode review gate at the checkpoint below commits, pushes, and records `stage:test` on approval.
+
 ### Checkpoint: do not auto-continue into testing
 
-Implementation and testing are not the same act, and not necessarily the same person — a developer implementing the feature does not imply they (or anyone present in this session) is the QA person who should now test it. Ask explicitly:
+Implementation and testing are not the same act, and not necessarily the same person — a developer implementing the feature does not imply they (or anyone present in this session) is the QA person who should now test it. Ask explicitly.
+
+**Worktree mode** — the work is committed and pushed:
 
 > "Implementation done, committed, and pushed. Should testing start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
 
 - **Proceed now**: continue directly into Phase 4 below, same session — you already have `$WORK_DIR` and `$FEATURE_BRANCH`.
-- **Stop here**: the state is already correctly recorded (`stage:test`). In worktree mode, restore `$ORIGINAL_BRANCH` on the main checkout — the worktree itself stays on the feature branch, which is fine; a resuming session fetches its own fresh worktree per Phase 0. In local mode, leave the main checkout on `$FEATURE_BRANCH` (do not restore) — the branch is pushed, so a resuming session can pick it up per Phase 0's local-mode branch. Tell the user testing is ready to start whenever, and end here.
+- **Stop here**: the state is already correctly recorded (`stage:test`). Restore `$ORIGINAL_BRANCH` on the main checkout — the worktree itself stays on the feature branch, which is fine; a resuming session fetches its own fresh worktree per Phase 0. Tell the user testing is ready to start whenever, and end here.
+
+**Local mode** — the implementation is uncommitted for review. Run the **Local-mode review gate** (Execution modes) with this checkpoint question:
+
+> "Implementation done — the changes are uncommitted in your working tree on `$FEATURE_BRANCH` for you to review (open the source-control view). Approve to commit and start testing, request changes, or stop here for someone to pick it up later?"
+
+The gate handles surfacing the diff, committing + pushing + recording `stage:test` on approval, and looping the implement sub-agent on requested changes. On approve, continue into Phase 4; on stop, end after the gate's commit + push.
 
 ---
 
@@ -367,6 +404,8 @@ Spawn a test sub-agent (Coding Tier) in `$WORK_DIR`:
 - **Claude Code**: Call `Agent({ description: "Write tests for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Tester"`, `Workspace: "inherit"`, and the `Prompt` below.
 
+The prompt template below is written for worktree mode (the sub-agent commits its tests). **In local mode**, when you build the prompt, replace the "Commit your tests …" task bullet with: *"Do NOT commit — leave the new/changed test files uncommitted in the working tree for the human to review, and report a suggested commit message in the form `test: add coverage for <description> (#<number>)`."* (deferred-commit model — divergence 5). The "confirm only intended files … revert any stray config changes" hygiene check still applies — run it against the working tree before reporting.
+
 **Prompt / Configuration:**
 ```
 You are writing tests for changes made on branch `<feature_branch>`.
@@ -417,7 +456,7 @@ YOUR TASK:
 When done, report: what test files you created/modified and what behaviour they cover.
 ```
 
-Push the branch (idempotent — safe even if nothing new was committed this phase, e.g. the `$RUN_E2E=false` build-only path):
+**(Worktree mode)** Push the branch (idempotent — safe even if nothing new was committed this phase, e.g. the `$RUN_E2E=false` build-only path):
 
 ```bash
 git -C $WORK_DIR push origin HEAD:<feature_branch>
@@ -425,14 +464,24 @@ git -C $WORK_DIR push origin HEAD:<feature_branch>
 
 Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> review`
 
+**(Local mode)** Do not push or set state here — the tests are still uncommitted for review. The Local-mode review gate at the checkpoint below commits, pushes, and records `stage:review` on approval.
+
 ### Checkpoint: do not auto-continue into review
 
-Testing and review are not the same act, and not necessarily the same person — a QA person confirming tests pass does not imply they (or anyone present in this session) is the developer who should now review the code. Ask explicitly:
+Testing and review are not the same act, and not necessarily the same person — a QA person confirming tests pass does not imply they (or anyone present in this session) is the developer who should now review the code. Ask explicitly.
+
+**Worktree mode** — the tests are committed and pushed:
 
 > "Testing done, committed, and pushed. Should review start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
 
 - **Proceed now**: continue directly into Phase 5 below, same session.
 - **Stop here**: the state is already correctly recorded (`stage:review`). Restore `$ORIGINAL_BRANCH` on the main checkout. Tell the user review is ready to start whenever, and end here.
+
+**Local mode** — the tests are uncommitted for review. Run the **Local-mode review gate** (Execution modes) with this checkpoint question:
+
+> "Tests done — the new/changed test files are uncommitted in your working tree on `$FEATURE_BRANCH` for you to review (open the source-control view). Approve to commit and start review, request changes, or stop here for someone to pick it up later?"
+
+The gate handles surfacing the diff, committing + pushing + recording `stage:review` on approval, and looping the test sub-agent on requested changes. On approve, continue into Phase 5; on stop, end after the gate's commit + push.
 
 ---
 
