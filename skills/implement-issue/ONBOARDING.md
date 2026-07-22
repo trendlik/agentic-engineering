@@ -233,3 +233,23 @@ Run an issue end-to-end:
 The retrospective (Phase 8) will start feeding project-specific findings back
 into `.implement-issue/LEARNINGS.md`, so the skill gets better tuned to the repo
 with every run.
+
+### Run modes: worktree (default) vs `--local`
+
+`/implement-issue N` runs the implement/test/review phases in an **isolated git
+worktree** by default. Your main checkout is untouched, and each phase commits and
+pushes at its boundary — best for running issues in parallel and for handing work
+off between sessions or people (a later session resumes from the pushed branch).
+
+Add `--local` to run those phases **directly in your checkout** on the feature
+branch instead, so the changes show up live in your editor's source-control view.
+In this mode the implement and test phases **defer their commit**: the changes stay
+uncommitted for you to review, and are committed and pushed only when you approve
+moving to the next phase (you can ask for changes first). Use it when you want to
+watch and discuss each phase's changes in a single sitting. You can still hand off
+between sessions — approving or stopping at a checkpoint commits and pushes, so a
+later session resumes from the branch — but worktree mode is better when you want to
+run several issues in parallel or keep your main checkout untouched.
+
+The full behavior of each mode lives in the skill's `WORKFLOW.md` under "Execution
+modes" — you don't need to read it to use either one.
