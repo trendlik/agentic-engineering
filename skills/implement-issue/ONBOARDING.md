@@ -251,5 +251,5 @@ between sessions — approving or stopping at a checkpoint commits and pushes, s
 later session resumes from the branch — but worktree mode is better when you want to
 run several issues in parallel or keep your main checkout untouched.
 
-The full behavior of each mode lives in the skill's `WORKFLOW.md` under "Execution
+The full behavior of each mode lives in this skill's `WORKFLOW.md` under "Execution
 modes" — you don't need to read it to use either one.
