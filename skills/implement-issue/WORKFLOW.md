@@ -315,6 +315,7 @@ YOUR TASK:
 - Follow existing code patterns and style
 - Commit your changes with a descriptive message referencing the issue: "<type>: <description> (#<number>)" where `<type>` matches the branch prefix (feat, fix, chore, docs, etc.)
 - Do not open a PR
+- Before reporting, delete any temporary or scratch files you created during this task (e.g. diff dumps, debug output, one-off scripts). Only remove files you created yourself — never pre-existing untracked or git-ignored files.
 
 When done, report: what files you changed and a brief summary of what you implemented.
 ```
@@ -452,6 +453,7 @@ YOUR TASK:
 - Before committing, run `git diff --stat` and confirm only intended files (your
   new/changed test specs) are staged — revert any stray config changes.
 - Commit your tests: "test: add coverage for <description> (#<number>)"
+- Before reporting, delete any temporary or scratch files you created during this task (e.g. diff dumps, debug output, one-off scripts). Only remove files you created yourself — never pre-existing untracked or git-ignored files.
 
 When done, report: what test files you created/modified and what behaviour they cover.
 ```
@@ -519,6 +521,7 @@ rationale; or "none">
 YOUR TASK:
 - Run: git -C $WORK_DIR diff <base_branch>...HEAD to see all changes
 - Review implementation correctness, edge cases, code quality, and alignment with the plan
+- Before reporting, delete any temporary or scratch files you created during this task (e.g. diff dumps, debug output, one-off scripts). Only remove files you created yourself — never pre-existing untracked or git-ignored files.
 
 Assess every change against these baseline dimensions (in addition to any repo-specific items appended after this prompt):
 
@@ -612,6 +615,7 @@ YOUR TASK:
 - Do not change behaviour beyond what is needed to resolve the listed issues
 - Follow existing code patterns and style
 - Commit your fixes: "fix: address blocking review issues (#<number>)"
+- Before reporting, delete any temporary or scratch files you created during this task (e.g. diff dumps, debug output, one-off scripts). Only remove files you created yourself — never pre-existing untracked or git-ignored files.
 
 When done, report: which issues you fixed and what you changed.
 ```
@@ -776,6 +780,7 @@ YOUR TASK:
 5. Use absolute paths — all work inside $WORK_DIR
 6. Commit the fix: "fix: address CI failures (#<number>)"
 7. Push: git -C $WORK_DIR push --force-with-lease origin HEAD:<feature_branch>
+8. Before reporting, delete any temporary or scratch files you created during this task (e.g. diff dumps, debug output, one-off scripts). Only remove files you created yourself — never pre-existing untracked or git-ignored files.
 
 When done, report: which checks failed, what the root cause was, and what you changed.
 ```
