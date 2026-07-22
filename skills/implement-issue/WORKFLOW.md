@@ -1,5 +1,28 @@
 # implement-issue — Detailed Workflow
 
+## Execution modes: worktree (default) vs local
+
+Two modes control *where* Phases 3–7 run. Everything else in this workflow — the phases, checkpoints, gates, sub-agent prompts — is identical between them. Set `$WORK_MODE` from the invocation: `local` if `--local` was passed, else `worktree`.
+
+- **Worktree mode (default)** — the implement/test/review/fix sub-agents run in an isolated git worktree, so the main checkout never leaves `$ORIGINAL_BRANCH`. Best for parallel work and clean handoffs between sessions or people.
+- **Local mode (`--local`)** — the same sub-agents run directly in the main checkout on `$FEATURE_BRANCH`, so changes appear in the user's editor as they land. Best when the user wants to watch and discuss changes as they happen, in a single session.
+
+**`$WORK_DIR` — the directory the work happens in.** Every git command and sub-agent prompt below refers to this directory as `$WORK_DIR`. Resolve it once, by mode:
+- Worktree mode: the worktree path returned by the Phase 3 sub-agent.
+- Local mode: the repo root — set it at the start of the run with `WORK_DIR=$(git rev-parse --show-toplevel)`.
+
+Once `$WORK_DIR` is set, every `git -C "$WORK_DIR" …` command and every sub-agent prompt that names it works unchanged in both modes — only the spots called out below actually diverge.
+
+**The divergences, in full:**
+1. **Phase 3 spawn** — worktree mode passes `isolation: "worktree"`; local mode omits it and first checks out `$FEATURE_BRANCH` in the main checkout.
+2. **Phase 4 worktree-prerequisites block** — worktree mode only (a fresh worktree lacks installed deps and git-ignored files); skipped in local mode, where the checkout already has both.
+3. **`$ORIGINAL_BRANCH` restore** — from Phase 3 onward, local mode has checked out `$FEATURE_BRANCH` *in the main checkout*, so the `git checkout $ORIGINAL_BRANCH` / "restore `$ORIGINAL_BRANCH`" steps become **no-ops you skip in local mode** — stay on `$FEATURE_BRANCH` (the work is pushed; the PR, once opened, references it). Worktree mode restores as written, since there the main checkout never left `$ORIGINAL_BRANCH`. Before Phase 3 (the Phase 1/2 stop checkpoints) no branch switch has happened in either mode, so those restores are harmless either way.
+4. **Worktree teardown** — "remove the worktree" on any exit path applies to worktree mode only; local mode has no worktree to remove.
+
+**Local-mode precondition (checked before Phase 3):** the working tree must be clean — `git status --porcelain` empty. Local mode checks out `$FEATURE_BRANCH` in place, which collides with uncommitted changes. If it's dirty, stop and ask the user to commit or stash first before continuing.
+
+---
+
 ## Phase 0: Resume Check
 
 Runs automatically at the start of every invocation, before Phase 1 — determines whether this issue is fresh or a previous session (possibly a different person, machine, or LLM adapter) already made progress, and jumps to the right place instead of restarting.
@@ -41,13 +64,13 @@ STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
   git ls-remote --heads origin "$FEATURE_BRANCH"
   ```
 
-  - Branch exists: tell the user implementation may already be underway; ask whether to continue from it (fetch into a fresh worktree, resume at `$STAGE`) or discard it and restart Phase 3.
+  - Branch exists: tell the user implementation may already be underway; ask whether to continue from it (worktree mode: fetch into a fresh worktree; local mode: check out `$FEATURE_BRANCH` in the clean main checkout — `git fetch origin && git checkout -B "$FEATURE_BRANCH" "origin/$FEATURE_BRANCH"`; then resume at `$STAGE`) or discard it and restart Phase 3.
 
     If continuing: unlike the clarification and plan, the Phase 3/4 sub-agents' own "what I implemented" / "what I tested" prose reports are never persisted anywhere — do not assume they're recoverable from a prior session. Derive that context directly from the branch instead, which is more reliable anyway:
 
     ```bash
-    git -C <worktree_path> log --oneline "origin/$BASE_BRANCH..HEAD"
-    git -C <worktree_path> diff "origin/$BASE_BRANCH...HEAD" --stat
+    git -C $WORK_DIR log --oneline "origin/$BASE_BRANCH..HEAD"
+    git -C $WORK_DIR diff "origin/$BASE_BRANCH...HEAD" --stat
     ```
 
     Read the commit messages and changed-files list (and the actual diff for anything non-obvious) to reconstruct "what was implemented" / "what was tested" before feeding it into whichever phase's sub-agent prompt comes next.
@@ -215,15 +238,30 @@ Plan approval and implementation are not the same act, and not necessarily the s
 
 ## Phase 3: Implement
 
+**(Local mode only)** First confirm the working tree is clean (the Local-mode precondition in "Execution modes"), then put the main checkout on `$FEATURE_BRANCH`. If the branch already exists — locally or on the remote, which is the case when Phase 0 resumed you here from an in-progress branch — check it out **as-is**; only create it from the freshly-synced base on a genuinely fresh run. Never `checkout -B … origin/$BASE_BRANCH` unconditionally: that resets the branch pointer to base and discards any commits a prior session made.
+
+```bash
+if git -C "$WORK_DIR" show-ref --verify --quiet "refs/heads/$FEATURE_BRANCH"; then
+  git -C "$WORK_DIR" checkout "$FEATURE_BRANCH"                       # already local (e.g. Phase 0 checked it out)
+elif git -C "$WORK_DIR" ls-remote --exit-code --heads origin "$FEATURE_BRANCH" >/dev/null 2>&1; then
+  git -C "$WORK_DIR" fetch origin "$FEATURE_BRANCH" && \
+  git -C "$WORK_DIR" checkout -B "$FEATURE_BRANCH" "origin/$FEATURE_BRANCH"   # resume from remote work
+else
+  git -C "$WORK_DIR" checkout -B "$FEATURE_BRANCH" "origin/$BASE_BRANCH"      # fresh: branch off base
+fi
+```
+
 Spawn an implementation sub-agent using your platform's sub-agent tool (Coding Tier):
-- **Claude Code**: Call `Agent({ description: "Implement issue #<number>", isolation: "worktree", model: "sonnet", prompt: <prompt> })`
-- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Implementer"`, `Workspace: "branch"` (or `"share"`), and the `Prompt` below.
+- **Claude Code**:
+  - Worktree mode: `Agent({ description: "Implement issue #<number>", isolation: "worktree", model: "sonnet", prompt: <prompt> })`
+  - Local mode: `Agent({ description: "Implement issue #<number>", model: "sonnet", prompt: <prompt> })` — no `isolation`, so the sub-agent works in the main checkout you just placed on `$FEATURE_BRANCH`.
+- **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Implementer"`, `Workspace: "branch"` (or `"share"`) in worktree mode / `"inherit"` in local mode, and the `Prompt` below.
 
 **Prompt / Configuration:**
 ```
 You are implementing GitHub issue #<number> on branch `<feature_branch>` (derived from the project's branching strategy — use this exact name for commits and any git operations).
 
-Start by reading CLAUDE.md / AGENTS.md at the worktree root — it contains project conventions
+Start by reading CLAUDE.md / AGENTS.md at the root of $WORK_DIR — it contains project conventions
 (code style, TypeScript rules, framework versions, etc.) you must follow.
 
 ISSUE TITLE: <title>
@@ -254,12 +292,12 @@ YOUR TASK:
 When done, report: what files you changed and a brief summary of what you implemented.
 ```
 
-The agent result will include the worktree path and branch name. **Save these** — you need them for Phases 4 and 5.
+In worktree mode the agent result includes the worktree path — **save it as `$WORK_DIR`** (with the branch name); you need it for Phases 4 and 5. In local mode `$WORK_DIR` is already the repo root, so there is nothing new to capture.
 
-Push the branch so it's visible to anyone resuming, regardless of whether you continue in this session or not — commits sitting only in a local worktree aren't recoverable by Phase 0's resume logic, which checks the remote:
+Push the branch so it's visible to anyone resuming, regardless of whether you continue in this session or not — commits sitting only in your local checkout aren't recoverable by Phase 0's resume logic, which checks the remote:
 
 ```bash
-git -C <worktree_path> push -u origin HEAD:<feature_branch>
+git -C $WORK_DIR push -u origin HEAD:<feature_branch>
 ```
 
 Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> test`
@@ -270,14 +308,17 @@ Implementation and testing are not the same act, and not necessarily the same pe
 
 > "Implementation done, committed, and pushed. Should testing start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
 
-- **Proceed now**: continue directly into Phase 4 below, same session — you already have the worktree path and `$FEATURE_BRANCH`.
-- **Stop here**: the state is already correctly recorded (`stage:test`). Restore `$ORIGINAL_BRANCH` on the main checkout — the worktree itself stays on the feature branch, which is fine; a resuming session fetches its own fresh worktree per Phase 0. Tell the user testing is ready to start whenever, and end here.
+- **Proceed now**: continue directly into Phase 4 below, same session — you already have `$WORK_DIR` and `$FEATURE_BRANCH`.
+- **Stop here**: the state is already correctly recorded (`stage:test`). In worktree mode, restore `$ORIGINAL_BRANCH` on the main checkout — the worktree itself stays on the feature branch, which is fine; a resuming session fetches its own fresh worktree per Phase 0. In local mode, leave the main checkout on `$FEATURE_BRANCH` (do not restore) — the branch is pushed, so a resuming session can pick it up per Phase 0's local-mode branch. Tell the user testing is ready to start whenever, and end here.
 
 ---
 
 ## Phase 4: Test
 
-### Worktree prerequisites (run once before any build/test)
+### Worktree prerequisites (worktree mode only — run once before any build/test)
+
+**Skip this whole block in local mode:** the main checkout already has installed
+dependencies and its git-ignored files, so nothing needs installing or copying.
 
 An isolated worktree starts without installed dependencies and without any
 files the project ignores from version control (env/secrets/local config). Before
@@ -314,15 +355,15 @@ type-check. Skip the test sub-agent entirely only for genuinely non-logic
 changes (styling, configuration, copy). Run the build and type-check directly:
 
 ```bash
-npm --prefix <worktree_path> run build
-npx --prefix <worktree_path> tsc --noEmit
+npm --prefix $WORK_DIR run build
+npx --prefix $WORK_DIR tsc --noEmit
 ```
 
 Report the result. If either command fails, treat it as a blocking issue and loop back to Phase 3.
 
 ### If `$RUN_E2E=true` (full test suite)
 
-Spawn a test sub-agent (Coding Tier) in the same worktree:
+Spawn a test sub-agent (Coding Tier) in `$WORK_DIR`:
 - **Claude Code**: Call `Agent({ description: "Write tests for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Tester"`, `Workspace: "inherit"`, and the `Prompt` below.
 
@@ -330,12 +371,12 @@ Spawn a test sub-agent (Coding Tier) in the same worktree:
 ```
 You are writing tests for changes made on branch `<feature_branch>`.
 
-The implementation is in the git worktree at: <worktree_path>
+The implementation is in the working directory at: $WORK_DIR
 
-Start by reading CLAUDE.md / AGENTS.md at <worktree_path> — it specifies the test
+Start by reading CLAUDE.md / AGENTS.md at $WORK_DIR — it specifies the test
 framework(s), test commands, and file conventions for this project. Follow those
 conventions exactly. If neither is present, discover conventions by looking
-at existing test files in the worktree.
+at existing test files in $WORK_DIR.
 
 ISSUE TITLE: <title>
 ISSUE BODY:
@@ -351,9 +392,9 @@ WHAT WAS IMPLEMENTED:
 <summary returned by Phase 3 agent>
 
 YOUR TASK:
-- Read the changed files in <worktree_path> to understand what was implemented
+- Read the changed files in $WORK_DIR to understand what was implemented
 - Write tests that cover the changed/new behaviour
-- Use absolute paths when reading/writing files — all work must be done inside <worktree_path>
+- Use absolute paths when reading/writing files — all work must be done inside $WORK_DIR
 - Run your new spec first to iterate quickly, THEN run the FULL suite (no filter,
   e.g. `npm run test:e2e`) at least once before reporting success. Specs that
   drive timing-sensitive UI (controlled inputs, focus/setTimeout, drag) often
@@ -379,7 +420,7 @@ When done, report: what test files you created/modified and what behaviour they 
 Push the branch (idempotent — safe even if nothing new was committed this phase, e.g. the `$RUN_E2E=false` build-only path):
 
 ```bash
-git -C <worktree_path> push origin HEAD:<feature_branch>
+git -C $WORK_DIR push origin HEAD:<feature_branch>
 ```
 
 Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> review`
@@ -407,9 +448,9 @@ If `$LEARNINGS_FILE` exists, append its **Review checklist (Phase 5)** section t
 ```
 You are reviewing the implementation of GitHub issue #<number>.
 
-The changes are on branch `<feature_branch>` in the worktree at: <worktree_path>
+The changes are on branch `<feature_branch>` in the working directory at: $WORK_DIR
 
-Start by reading CLAUDE.md / AGENTS.md at <worktree_path> for project conventions.
+Start by reading CLAUDE.md / AGENTS.md at $WORK_DIR for project conventions.
 
 ISSUE TITLE: <title>
 ISSUE BODY:
@@ -427,7 +468,7 @@ developer accepted in an earlier review loop — each names the standard set asi
 rationale; or "none">
 
 YOUR TASK:
-- Run: git -C <worktree_path> diff <base_branch>...HEAD to see all changes
+- Run: git -C $WORK_DIR diff <base_branch>...HEAD to see all changes
 - Review implementation correctness, edge cases, code quality, and alignment with the plan
 
 Assess every change against these baseline dimensions (in addition to any repo-specific items appended after this prompt):
@@ -498,7 +539,7 @@ First triage the blocking findings by their **category** (the reviewer tags each
 
 If, after waivers, **no** blocking findings remain to fix (the developer accepted all architecture findings and there were no security/correctness/test ones), skip the fix agent entirely and proceed as if the review were LGTM (see below).
 
-Otherwise, fix the remaining blocking findings automatically — do not ask further. Spawn a fix sub-agent (Coding Tier) in the same worktree:
+Otherwise, fix the remaining blocking findings automatically — do not ask further. Spawn a fix sub-agent (Coding Tier) in `$WORK_DIR`:
 - **Claude Code**: Call `Agent({ description: "Fix blocking review issues for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
@@ -506,9 +547,9 @@ Otherwise, fix the remaining blocking findings automatically — do not ask furt
 ```
 You are fixing blocking issues found during code review of GitHub issue #<number>.
 
-The changes are on branch `<feature_branch>` in the worktree at: <worktree_path>
+The changes are on branch `<feature_branch>` in the working directory at: $WORK_DIR
 
-Start by reading CLAUDE.md / AGENTS.md at <worktree_path> for project conventions.
+Start by reading CLAUDE.md / AGENTS.md at $WORK_DIR for project conventions.
 
 ISSUE TITLE: <title>
 APPROVED IMPLEMENTATION PLAN:
@@ -555,15 +596,15 @@ gh issue view <number> --json state,stateReason
 gh pr list --search "<number> in:title" --state merged --json number,title
 ```
 
-If the issue is now CLOSED or a merged PR already addresses it, STOP: do not push or open a PR. Delete the local branch, remove the worktree, restore `$ORIGINAL_BRANCH`, and report the duplicate to the user.
+If the issue is now CLOSED or a merged PR already addresses it, STOP: do not push or open a PR. Restore `$ORIGINAL_BRANCH`, then delete the feature branch and (worktree mode only) remove the worktree, and report the duplicate to the user. In local mode, restore `$ORIGINAL_BRANCH` *before* deleting `$FEATURE_BRANCH` (you cannot delete the branch you are on).
 
 1. Rebase the branch onto the latest base branch so the PR has no merge conflicts:
 
 ```bash
-git -C <worktree_path> fetch origin
-git -C <worktree_path> rebase origin/<base_branch>   # run as its own step — do NOT pipe to tail/head (it masks the exit code)
+git -C $WORK_DIR fetch origin
+git -C $WORK_DIR rebase origin/<base_branch>   # run as its own step — do NOT pipe to tail/head (it masks the exit code)
 # Only if the rebase succeeded (no conflict markers, no rebase-in-progress) push:
-git -C <worktree_path> push --force-with-lease origin HEAD:<feature_branch>
+git -C $WORK_DIR push --force-with-lease origin HEAD:<feature_branch>
 ```
 On conflict, resolve, `git rebase --continue`, then push — never chain the push after a piped rebase.
 
@@ -654,7 +695,7 @@ gh run view <run-id> --log-failed
 
 If `$LEARNINGS_FILE` exists, check its **CI quirks (Phase 7)** section for a known failure signature matching these logs — a documented flake with a proven fix beats rediscovering it — and append the section to the fix-agent prompt below.
 
-Then spawn a fix sub-agent (Coding Tier) in the same worktree:
+Then spawn a fix sub-agent (Coding Tier) in `$WORK_DIR`:
 - **Claude Code**: Call `Agent({ description: "Fix CI failures for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "CI Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
@@ -662,9 +703,9 @@ Then spawn a fix sub-agent (Coding Tier) in the same worktree:
 ```
 You are fixing CI failures for a PR on branch `<feature_branch>`.
 
-Worktree path: <worktree_path>
+Working directory: $WORK_DIR
 
-Start by reading CLAUDE.md / AGENTS.md at <worktree_path> — it specifies the test
+Start by reading CLAUDE.md / AGENTS.md at $WORK_DIR — it specifies the test
 framework, test commands, and file layout for this project. Use it to locate test
 files and understand how tests are run.
 
@@ -675,17 +716,17 @@ FAILED CI LOGS:
 <paste the full output of `gh run view <run-id> --log-failed`>
 
 YOUR TASK:
-1. Sync the worktree with any commits pushed by previous fix iterations:
+1. Sync $WORK_DIR with any commits pushed by previous fix iterations:
    ```bash
-   git -C <worktree_path> fetch origin
-   git -C <worktree_path> rebase origin/<feature_branch>
+   git -C $WORK_DIR fetch origin
+   git -C $WORK_DIR rebase origin/<feature_branch>
    ```
 2. Read the failing log carefully — identify the exact file, line, and error for each failure
-3. Read the failing test file(s) and the relevant source files in <worktree_path> to understand the current structure
+3. Read the failing test file(s) and the relevant source files in $WORK_DIR to understand the current structure
 4. Fix the root cause — prefer fixing tests only if the implementation is correct; fix the implementation if it is genuinely wrong
-5. Use absolute paths — all work inside <worktree_path>
+5. Use absolute paths — all work inside $WORK_DIR
 6. Commit the fix: "fix: address CI failures (#<number>)"
-7. Push: git -C <worktree_path> push --force-with-lease origin HEAD:<feature_branch>
+7. Push: git -C $WORK_DIR push --force-with-lease origin HEAD:<feature_branch>
 
 When done, report: which checks failed, what the root cause was, and what you changed.
 ```
@@ -743,7 +784,7 @@ The record combines the Step 1 tallies above with the PR's diff stats:
 gh pr view <pr-number> --json state,mergedAt,additions,deletions,files,commits
 
 # files_changed / diff_loc / commits: from the PR stats above, or equivalently
-git -C <worktree_path> diff --stat <base_branch>...HEAD
+git -C $WORK_DIR diff --stat <base_branch>...HEAD
 
 # wall_clock_hours: issue createdAt -> PR mergedAt, in hours
 gh issue view <number> --json createdAt
