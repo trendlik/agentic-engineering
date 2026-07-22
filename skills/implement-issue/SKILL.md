@@ -10,11 +10,14 @@ description: Implements a GitHub issue end-to-end through a structured clarify �
 ```
 /implement-issue 42
 /implement-issue 42 --skip-e2e
+/implement-issue 42 --local
 ```
 
 Fetches issue #42, clarifies requirements with the user, drafts and gets approval on an implementation plan, then runs sequential sub-agents (implement → test → review) in an isolated git worktree. Loops on review findings until clean, opens a PR, then watches CI and spawns fix agents until all checks pass. Ends with a retrospective that diagnoses bottlenecks and routes findings: project-specific learnings into the target repo's `.implement-issue/LEARNINGS.md` (with user approval), skill-level proposals as evidence-backed issues on the skill repo.
 
 Pass `--skip-e2e` to skip the E2E test suite in Phase 4 (build + type-check only). If the flag is omitted, the user is asked after plan approval.
+
+Pass `--local` to run the implement/test/review/fix phases directly in the main checkout on the feature branch instead of an isolated worktree, so the changes appear in the user's editor as they land — best when the user wants to watch and discuss changes as they happen in a single session. The default (no flag) uses a worktree, which keeps the main checkout untouched and is better for parallel work and clean cross-session handoffs. See WORKFLOW.md's "Execution modes" section for the full behavior difference.
 
 ## Phase overview
 
@@ -114,6 +117,7 @@ Phase 8 appends (or upserts) one line per run, best-effort and non-blocking, via
 - Parse `<number>` from the invocation args (e.g. `/implement-issue 42` → number is `42`)
 - Always run Phase 0 before Phase 1 — never assume an issue is fresh; let `state.sh get` decide whether to resume mid-workflow
 - Parse optional `--skip-e2e` flag; if present, save `$RUN_E2E=false` immediately and skip asking the user
+- Parse optional `--local` flag; save `$WORK_MODE=local` if present, else `$WORK_MODE=worktree` (default). In local mode, Phases 3–7 run in the main checkout on `$FEATURE_BRANCH` rather than an isolated worktree — see WORKFLOW.md's "Execution modes" section, which defines the `$WORK_DIR`/`<worktree_path>` mapping and every mode-specific divergence
 - Never proceed past Phase 2 without explicit user plan approval
 - Never auto-continue from plan approval into Phase 3 — always ask whether to implement now or stop here for a different person/session to pick up (plan approval and implementation may not be the same person)
 - Same rule at every other role boundary: never auto-continue from clarification into planning, or from implementation into testing, or from testing into review — always ask. Push the branch before any of these checkpoints (except Clarify→Plan, which has no branch yet) — Phase 0's resume logic checks the remote, not local worktree state, so unpushed commits aren't recoverable by a resuming session
