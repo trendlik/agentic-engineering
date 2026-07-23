@@ -75,5 +75,12 @@ ln -s "$(command -v bash)" "$EMPTY_PATH_DIR/bash"
 assert_success "fails open when gh/jq are unavailable" env -i PATH="$EMPTY_PATH_DIR" "$PREFLIGHT" 209
 rm -rf "$EMPTY_PATH_DIR"
 
+# (j) the issue fetch itself fails (e.g. transient network blip) -> cannot
+# verify, fails open, exits 0. This must NOT be conflated with "genuine
+# absence of label/comment" (case c), which fails closed -- a fetch failure
+# is exactly the scenario the script's own explicit-fetch-then-check-$?
+# handling exists to distinguish.
+FAKE_GH_FETCH_FAIL=1 assert_success "fails open when the issue fetch itself fails" "$PREFLIGHT" 210
+
 echo "preflight-implement.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

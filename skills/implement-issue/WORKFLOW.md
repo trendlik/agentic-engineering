@@ -273,7 +273,7 @@ Before doing anything else in this phase, run the local hard gate:
 
 If it exits **non-zero**, STOP — do not spawn the implementation sub-agent, and do not edit any files yourself. Tell the user the plan-approval gate isn't recorded for this issue and that Phase 2 (plan drafting and approval) must complete first. This is the fail-closed catch for a run that skipped straight from an issue to implementation without ever going through Phase 2.
 
-If it prints a **warning** and exits 0 (approval state was undeterminable — offline, `gh`/`jq` unavailable, labels disabled, or the repo isn't GitHub-backed), note the warning to the user and proceed — the script fails open precisely so a legitimate offline or non-GitHub run is never blocked.
+If it prints a **warning** and exits 0 (approval state was undeterminable — offline, `gh`/`jq` unavailable, or the repo isn't GitHub-backed), note the warning to the user and proceed — the script fails open precisely so a legitimate offline or non-GitHub run is never blocked.
 
 **(Local mode only)** First confirm the working tree is clean (the Local-mode precondition in "Execution modes"), then put the main checkout on `$FEATURE_BRANCH`. If the branch already exists — locally or on the remote, which is the case when Phase 0 resumed you here from an in-progress branch — check it out **as-is**; only create it from the freshly-synced base on a genuinely fresh run. Never `checkout -B … origin/$BASE_BRANCH` unconditionally: that resets the branch pointer to base and discards any commits a prior session made.
 

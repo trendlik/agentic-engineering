@@ -2,7 +2,8 @@
 # Minimal stand-in for `gh`, used only by the test suite so tests never hit
 # the network or a real repo. Per-issue state (labels, title, comments) is
 # kept in flat files under $FAKE_GH_STATE_DIR. Set FAKE_GH_NO_REPO=1 to
-# simulate a non-GitHub-backed repo (gh repo view fails).
+# simulate a non-GitHub-backed repo (gh repo view fails). Set
+# FAKE_GH_FETCH_FAIL=1 to simulate a transient `gh issue view` fetch failure.
 
 set -uo pipefail
 
@@ -15,6 +16,9 @@ comments_file() { echo "$FAKE_GH_STATE_DIR/issue-$1.comments.json"; }
 
 case "${1:-} ${2:-}" in
   "issue view")
+    if [[ "${FAKE_GH_FETCH_FAIL:-0}" == "1" ]]; then
+      exit 1
+    fi
     number=$3
     shift 3
     lf=$(labels_file "$number"); touch "$lf"
