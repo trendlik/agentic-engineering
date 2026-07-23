@@ -1,0 +1,17 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  implement-issue-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # jq is preinstalled on ubuntu-latest; bash and git are too. The test
+      # runner stubs `gh`, so no network or GitHub token is needed.
+      - name: Run implement-issue script tests
+        run: skills/implement-issue/scripts/tests/run-tests.sh
