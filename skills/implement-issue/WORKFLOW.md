@@ -18,13 +18,13 @@ Once `$WORK_DIR` is set, every `git -C "$WORK_DIR" …` command and every sub-ag
 2. **Phase 4 worktree-prerequisites block** — worktree mode only (a fresh worktree lacks installed deps and git-ignored files); skipped in local mode, where the checkout already has both.
 3. **`$ORIGINAL_BRANCH` restore** — from Phase 3 onward, local mode has checked out `$FEATURE_BRANCH` *in the main checkout*, so the `git checkout $ORIGINAL_BRANCH` / "restore `$ORIGINAL_BRANCH`" steps become **no-ops you skip in local mode** — stay on `$FEATURE_BRANCH` (the work is pushed; the PR, once opened, references it). Worktree mode restores as written, since there the main checkout never left `$ORIGINAL_BRANCH`. Before Phase 3 (the Phase 1/2 stop checkpoints) no branch switch has happened in either mode, so those restores are harmless either way.
 4. **Worktree teardown** — "remove the worktree" on any exit path applies to worktree mode only; local mode has no worktree to remove.
-5. **Commit timing** — worktree mode has each sub-agent commit its own work and the coordinator push at every phase boundary (required for cross-session resume, which reads the remote). Local mode **defers the commit to the approval gate**: the Phase 3 and Phase 4 sub-agents leave their changes uncommitted in `$WORK_DIR`, and the commit + push happen only when the human approves moving on — so the human can review each phase's changed files in their editor *before* anything is committed. See "Local-mode review gate" below.
+5. **Commit timing** — worktree mode has each sub-agent commit its own work and the coordinator push at every phase boundary (required for cross-session resume, which reads the remote). Local mode **defers the commit to the approval gate**: the Phase 3, Phase 4, and Phase 6 (review-fix) sub-agents leave their changes uncommitted in `$WORK_DIR`, and the commit + push happen only when the human approves moving on — so the human can review each phase's changed files in their editor *before* anything is committed. See "Local-mode review gate" below.
 
 **Local-mode precondition (checked before Phase 3):** the working tree must be clean — `git status --porcelain` empty. Local mode checks out `$FEATURE_BRANCH` in place, which collides with uncommitted changes. If it's dirty, stop and ask the user to commit or stash first before continuing.
 
 ### Local-mode review gate
 
-Local mode exists so the human can review each phase's changes *before* they're committed. So in local mode the Phase 3 and Phase 4 sub-agents do **not** commit — they leave their work uncommitted in `$WORK_DIR` on `$FEATURE_BRANCH` and report a *suggested* commit message. At that phase's checkpoint, run this gate in place of the worktree-mode "already committed and pushed" checkpoint:
+Local mode exists so the human can review each phase's changes *before* they're committed. So in local mode the Phase 3, Phase 4, and Phase 6 fix sub-agents do **not** commit — they leave their work uncommitted in `$WORK_DIR` on `$FEATURE_BRANCH` and report a *suggested* commit message. At that phase's checkpoint, run this gate in place of the worktree-mode "already committed and pushed" checkpoint. For the Phase 6 fix phase specifically, this gate's "request changes" branch is how the human steers the remediation approach — it re-runs the fix agent on the still-uncommitted tree with the human's guidance, rather than committing a fix the human hasn't seen.
 
 1. **Surface the changes for review.** List the changed files as clickable paths and show the diff shape:
    ```bash
@@ -595,6 +595,8 @@ Otherwise, fix the remaining blocking findings automatically — do not ask furt
 - **Claude Code**: Call `Agent({ description: "Fix blocking review issues for issue #<number>", model: "sonnet", prompt: <prompt> })`
 - **Google Antigravity**: Call `invoke_subagent` with `TypeName: "self"`, `Role: "Fixer"`, `Workspace: "inherit"`, and the `Prompt` below.
 
+The prompt template below is written for worktree mode (the fix agent commits its own work). **In local mode**, when you build the prompt, replace the "Commit your fixes …" task bullet with: *"Do NOT commit — leave all changes uncommitted in the working tree so the human can review them, and instead report a suggested commit message in the form `fix: address blocking review issues (#<number>)` for the coordinator to use on approval."* (deferred-commit model — divergence 5). The type-check/hygiene bullets still apply: the fix agent validates before reporting, it just doesn't commit.
+
 **Prompt / Configuration:**
 ```
 You are fixing blocking issues found during code review of GitHub issue #<number>.
@@ -620,7 +622,19 @@ YOUR TASK:
 When done, report: which issues you fixed and what you changed.
 ```
 
-After the fix agent completes, loop back to **Phase 5** to re-review — passing the accumulated **accepted architecture deviations** so the re-review does not re-flag them. If the re-review returns only minor issues or LGTM, proceed accordingly below.
+After the fix agent completes, what happens next depends on `$WORK_MODE`:
+
+**Worktree mode** — the fix agent already committed its own work (see the prompt above; auto-commit-and-loop, unchanged). Loop back to **Phase 5** to re-review — passing the accumulated **accepted architecture deviations** so the re-review does not re-flag them.
+
+**Local mode** — the fix agent's changes are uncommitted in `$WORK_DIR` for the human to review. Run the **Local-mode review gate** (see "Execution modes") with this checkpoint question:
+
+> "Fixes applied — the changes are uncommitted in your working tree on `$FEATURE_BRANCH` for you to review (open the source-control view). Approve to commit and re-review, request changes to have the fix agent try a different approach, or stop here for someone to pick it up later?"
+
+- **Approve** — the gate commits (`fix: address blocking review issues (#<number>)`), pushes, and only then loops back to **Phase 5** to re-review — passing the accumulated **accepted architecture deviations** so the re-review does not re-flag them.
+- **Request changes** — the gate re-runs the fix agent on the still-uncommitted tree with the human's steer (this is how the human directs a different remediation approach — see "Local-mode review gate" above), then re-surfaces the diff.
+- **Stop** — a handoff: the gate commits + pushes as usual, then end.
+
+In both modes, if the re-review returns only minor issues or LGTM, proceed accordingly below. The 3-fix-iteration cap and the accepted-architecture-deviations carry-through are unchanged in either mode; in local mode the review gate simply sits inside each iteration.
 
 If the review still returns blocking issues after 3 fix iterations, restore the original branch and stop:
 
