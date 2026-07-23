@@ -1,9 +1,11 @@
 ---
 name: implement-issue
-description: Implements a GitHub issue end-to-end through a structured clarify → plan → implement → test → review → PR → CI-watch → retrospective loop, with separate sub-agents for implementation, testing, review, and CI fixes. Use when user says "implement issue #N", "/implement-issue N", or wants to work a GitHub issue through to a pull request.
+description: A gated, approval-driven workflow that takes a GitHub issue to a merged PR through clarify → plan → implement → test → review → CI-watch → retrospective phases. The coordinator never edits code itself — implementation happens only in a plan-gated sub-agent (Phase 3). Use when the user says "implement issue #N", "/implement-issue N", or wants to work a GitHub issue through to a pull request.
 ---
 
 # implement-issue
+
+> **STOP: the coordinator (you, the main agent) never edits product code or writes files that implement the issue.** The only path to a code change is spawning the Phase 3 implementation sub-agent, and that spawn is gated behind explicit plan approval (Phase 2) plus the `preflight-implement.sh` precondition check at the top of Phase 3. If you find yourself about to edit an implementation file and Phase 2 approval hasn't happened this run, you are doing it wrong — stop and return to the phase sequence.
 
 ## Quick start
 
@@ -73,6 +75,7 @@ If it exists, read it once now. Each phase in WORKFLOW.md consumes only its own 
 | `state.sh` | — (new) | stage/gate bookkeeping at every phase transition; read by Phase 0 to dispatch |
 | `find-artifact.sh <issue> <heading>` | — (new) | Phase 0 — loads a previously-posted clarification/plan comment on resume |
 | `gate.sh <issue> <gate>` | — (new) | manual/local advisory gate check (fails open) |
+| `preflight-implement.sh <issue>` | — (new) | Phase 3 precondition — fail-closed local gate that blocks implement without plan approval |
 | `verify-gates.sh <issue>` | — (new) | **CI only** — the fail-closed enforcement check; see below |
 | `record-outcome.sh <issue> key=value ...` | — (new) | Phase 8 |
 | `backfill-outcomes.sh <extract\|run>` | — (new) | Phase 8 Step 1b (seed offer); manual |
@@ -127,6 +130,7 @@ Phase 8 appends (or upserts) one line per run, best-effort and non-blocking, via
 
 ## Key rules
 
+- **The coordinator never edits product code.** The only way to change code is to spawn the plan-gated Phase 3 implementation sub-agent; Phase 3's `preflight-implement.sh` precondition hard-aborts (fail-closed) if no plan approval is recorded for the issue. See WORKFLOW.md Phase 3.
 - Resolve `$SKILL_DIR` first (see Setup above) — every script invocation below depends on it
 - Parse `<number>` from the invocation args (e.g. `/implement-issue 42` → number is `42`)
 - Always run Phase 0 before Phase 1 — never assume an issue is fresh; let `state.sh get` decide whether to resume mid-workflow
