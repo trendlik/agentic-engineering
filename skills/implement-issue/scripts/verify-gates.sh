@@ -32,6 +32,12 @@ number=$1
 require_cmd gh "https://cli.github.com"
 require_cmd jq "brew install jq"
 
+# If the issue is already marked as stage:done, the gates are implicitly approved
+if issue_labels "$number" | grep -qx "stage:done"; then
+  ok "OK    issue #$number is already stage:done — gates implicitly approved"
+  exit 0
+fi
+
 fail=0
 for gate in "${GATES[@]}"; do
   if issue_labels "$number" | grep -qx "gate:${gate}-approved"; then

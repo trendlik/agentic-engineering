@@ -85,7 +85,7 @@ If it exists, read it once now. Each phase in WORKFLOW.md consumes only its own 
 
 To turn this on for a project:
 
-1. Copy `templates/implement-issue-gate.yml` to the target project's `.github/workflows/implement-issue-gate.yml`. It checks out this skill's repo fresh on every run (no need to vendor scripts into the target project) and resolves the linked issue from the PR body's `Closes #<n>`.
+1. Copy `templates/implement-issue-gate.yml` to the target project's `.github/workflows/implement-issue-gate.yml`. It checks out this skill's repo fresh on every run (no need to vendor scripts into the target project) and resolves the linked issue from the PR body's `Closes #<n>` (the PR description must explicitly link the issue using `Closes #<n>`, `Fixes #<n>`, or `Resolves #<n>` for the workflow to find it).
    - `trendlik/agentic-engineering` is **private**, so this checkout needs an explicit token — `GITHUB_TOKEN` can never read a different repo, even one you personally own (a hard GitHub limitation, not a missing setting). Create a fine-grained PAT scoped to read-only Contents+Metadata on `trendlik/agentic-engineering`, then store it as a secret named `SKILL_REPO_TOKEN`. Simplest for a single target repo: `gh secret set SKILL_REPO_TOKEN --repo <owner>/<target-repo>`. If several target repos need it, an org secret avoids re-creating it per repo (needs an org — not required otherwise): `gh secret set SKILL_REPO_TOKEN --org <your-org> --repos "<target-repo-name>"`.
 2. In the target repo's branch protection settings, add `implement-issue-gate` as a required status check.
 
