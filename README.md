@@ -14,6 +14,10 @@ versioned here.
 - `implement-issue` — runs an issue from ticket to merged PR: agents do the work,
   humans approve at the key gates. Phases: clarify → plan → implement → test →
   review → PR → CI-fix loop → retrospective.
+  The retrospective is what makes this **compound**: every run feeds project-specific
+  learnings back into the target repo (`.implement-issue/LEARNINGS.md`), so each phase
+  gets sharper with every issue — the skill isn't just a pipeline, it's a loop that
+  tunes itself to the repo it runs in.
   Runs in an isolated git worktree by default; pass `--local` to work directly in
   your checkout and review each phase's changes in your editor before they're committed.
   Full setup, start to finish (install the skill, then onboard a project), lives in

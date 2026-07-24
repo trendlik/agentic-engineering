@@ -827,6 +827,8 @@ Report the situation to the user — it likely needs manual investigation.
 
 ## Phase 8: Retrospective
 
+**Why this phase exists — read before treating it as optional.** The retrospective is the skill's only learning mechanism: it is what turns each run's friction into content that makes the *next* run smoother. Skip it and the skill stays exactly as dumb on issue #50 as it was on issue #1 — every clarify gap, plan miss, and CI flake gets rediscovered from scratch instead of being written down once. The individual *bookkeeping* calls below (the outcome-ledger write, the backfill offer) are best-effort and non-blocking, and say so — but that posture is about resilience when a `gh` call fails, **not** a license to skip the retrospective itself. Running it is not optional; only its side-writes degrade gracefully.
+
 After CI passes (or after a stop-and-report exit), run a retrospective on this implementation session, propose targeted improvements, and route each one to its proper destination — the target project's learnings file or the skill repo's issue tracker. Users of this skill never edit the skill directly (see "Project learnings" in SKILL.md).
 
 ### Step 1 — Collect signals

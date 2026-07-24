@@ -90,9 +90,14 @@ optional and makes it work *better*.
 
 ## 2. Recommended: `.implement-issue/LEARNINGS.md`
 
-The highest-value optional layer. This per-project file is written by the Phase 8
-retrospective (with user approval) and *read* by every future run to tailor its
-phases to the repo.
+This is where the skill's core value lives — it's "optional" only in the sense that
+the skill still *runs* without it, degrading to a generic pipeline. But the
+compounding feedback loop **is** the point of the skill: this per-project file is
+written by the Phase 8 retrospective (with user approval) and *read* by every future
+run to tailor its phases to the repo, so each run gets sharper than the last. Adopt
+it first; the layers below merely make individual runs smoother, whereas this is what
+makes the skill get *better over time*. Skip it and you keep re-solving the same
+clarify gaps, plan misses, and CI flakes on every issue.
 
 ```bash
 mkdir -p .implement-issue
