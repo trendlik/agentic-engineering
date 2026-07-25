@@ -215,6 +215,7 @@ Draft the implementation plan in the conversation. Include:
 - Any risks or tradeoffs
 - For removal/deletion changes: explicitly list any tests (unit or E2E) that cover the removed feature and confirm they will be deleted as part of the plan
 - **Architecture standards (baseline, every project):** keep changes within existing module/layer boundaries — do not introduce a dependency pointing from a lower/shared layer up into higher-level or feature code, and avoid dependency cycles; prefer extending an existing abstraction over adding a near-duplicate one, and if a new module or dependency is unavoidable, justify it explicitly; name the single source of truth for any new state so the same fact isn't persisted in two places that can drift. `$LEARNINGS_FILE`'s **Planning constraints** section (below) adds the repo's own architectural rules on top of this baseline.
+- **Design for testability (baseline, every project):** name the seams. Identify the pure/core logic that can be unit-tested in isolation versus the I/O/side-effect shell around it, and state which collaborators (clock, filesystem, network, DB, randomness) are injected or otherwise substitutable rather than reached for directly. If a planned unit can only be exercised by mocking out the very logic under test, or only through a full end-to-end path where a unit-level seam was reasonable, treat that as a design smell to resolve *in the plan* — not something to paper over with heavy mocking after the code exists. Keep the core deterministic so tests can assert on real behaviour. (Testability is a design property, so a deliberate departure from this — e.g. an intentionally un-seamed thin adapter — belongs under "Intentional architecture deviations" below, same as any other architecture-standard waiver.)
 - **Intentional architecture deviations:** if the plan deliberately sets aside one of the architecture-standards baseline items above, say so explicitly under a **"Intentional architecture deviations"** heading in the plan — name the standard being set aside and the reason. Anything listed there is carried into Phase 5 as *pre-accepted*, so the reviewer will not flag it. Only architecture standards may be waived this way; security and correctness never are.
 - If `$LEARNINGS_FILE` exists, honor every entry in its **Planning constraints (Phase 2)** section — address each relevant one explicitly in the plan
 
@@ -542,6 +543,12 @@ ARCHITECTURE STANDARDS  (skip anything listed under ACCEPTED ARCHITECTURE DEVIAT
 - No near-duplicate abstraction where an existing one was extendable; any new module or dependency is justified, not incidental.
 - No fact is now persisted in two places that can drift; the single source of truth is clear.
 - Public interfaces (function signatures, flags, config/schema keys) changed only intentionally, with docs and callers updated to match.
+
+TESTABILITY  (a design property — classify any finding here under the "architecture" category, and skip anything the plan pre-declared under ACCEPTED ARCHITECTURE DEVIATIONS)
+- Core logic is separable from I/O and side effects — the change did not bury network/filesystem/DB/clock/random access inside a unit that should be testable in isolation.
+- Collaborators the tests need to control are injected or otherwise substitutable, not hard-wired — a unit test can exercise the logic without standing up the whole world.
+- No behaviour is testable only by mocking out the very logic under test, or only through a full end-to-end path where a unit-level seam was reasonable.
+- Where the plan named seams (pure core vs. I/O shell, injected collaborators), the implementation actually honors them.
 
 SECURITY
 - No secrets, tokens, or credentials committed or written to logs; sensitive values come from an env var or secret store.
