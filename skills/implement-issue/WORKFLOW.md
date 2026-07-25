@@ -216,6 +216,7 @@ Draft the implementation plan in the conversation. Include:
 - For removal/deletion changes: explicitly list any tests (unit or E2E) that cover the removed feature and confirm they will be deleted as part of the plan
 - **Architecture standards (baseline, every project):** keep changes within existing module/layer boundaries — do not introduce a dependency pointing from a lower/shared layer up into higher-level or feature code, and avoid dependency cycles; prefer extending an existing abstraction over adding a near-duplicate one, and if a new module or dependency is unavoidable, justify it explicitly; name the single source of truth for any new state so the same fact isn't persisted in two places that can drift. `$LEARNINGS_FILE`'s **Planning constraints** section (below) adds the repo's own architectural rules on top of this baseline.
 - **Design for testability (baseline, every project):** name the seams. Identify the pure/core logic that can be unit-tested in isolation versus the I/O/side-effect shell around it, and state which collaborators (clock, filesystem, network, DB, randomness) are injected or otherwise substitutable rather than reached for directly. If a planned unit can only be exercised by mocking out the very logic under test, or only through a full end-to-end path where a unit-level seam was reasonable, treat that as a design smell to resolve *in the plan* — not something to paper over with heavy mocking after the code exists. Keep the core deterministic so tests can assert on real behaviour. (Testability is a design property, so a deliberate departure from this — e.g. an intentionally un-seamed thin adapter — belongs under "Intentional architecture deviations" below, same as any other architecture-standard waiver.)
+- **Concurrency & ordering hazards (only when the change touches concurrency, shared mutable state, ordering, caching, or retries):** name the hazards explicitly and state the strategy for each. Prefer *designing the race out* (remove the shared mutable state — an immutable/pure core, a single owner of the state, or message-passing) over trying to test around it; a passing concurrency test does not prove a race is absent. Where a hazard can't be designed out, say how it will be *detected* (enable the toolchain's race detector / sanitizer — e.g. Go `-race`, ThreadSanitizer) and, if a specific interleaving matters, how it will be made *deterministically testable* (inject the clock/scheduler — the same seam the testability bullet asks for). Skip this bullet entirely for changes with no concurrency surface; do not manufacture hazards that aren't there.
 - **Intentional architecture deviations:** if the plan deliberately sets aside one of the architecture-standards baseline items above, say so explicitly under a **"Intentional architecture deviations"** heading in the plan — name the standard being set aside and the reason. Anything listed there is carried into Phase 5 as *pre-accepted*, so the reviewer will not flag it. Only architecture standards may be waived this way; security and correctness never are.
 - If `$LEARNINGS_FILE` exists, honor every entry in its **Planning constraints (Phase 2)** section — address each relevant one explicitly in the plan
 
@@ -454,6 +455,17 @@ YOUR TASK:
   pass in isolation but fail under parallel load. For such specs also stress them
   with the runner's repeat flag (e.g. `--repeat-each=10`). Only report "passing"
   if the FULL suite is green — never conclude from a filtered run alone.
+- If the change touches concurrency, shared mutable state, ordering, caching, or
+  retries (see the plan's concurrency-hazards note), turn on the toolchain's race
+  detector / sanitizer for the run if the language has one (e.g. Go `test -race`,
+  ThreadSanitizer, a framework's async-leak/act warnings) — it flags races the code
+  exercises whether or not a test asserts on them, so it is the highest-value add
+  here. Stress the relevant specs under repetition/parallel load (the repeat flag
+  above), and prefer a deterministic interleaving test driven through the injected
+  clock/scheduler over a sleep-based one. Treat any race the detector reports as a
+  blocking failure and loop back to Phase 3 — do not silence it with a longer sleep
+  or a retry. A green concurrency suite is a backstop, not a proof of absence; say so
+  in the test report rather than claiming the race is ruled out.
 - After the full suite passes, also run the project's build/compile step (check
   CLAUDE.md for the command — it is the same command CI runs). Test runners
   execute code at runtime and can succeed even when the compiler rejects the
@@ -549,6 +561,12 @@ TESTABILITY  (a design property — classify any finding here under the "archite
 - Collaborators the tests need to control are injected or otherwise substitutable, not hard-wired — a unit test can exercise the logic without standing up the whole world.
 - No behaviour is testable only by mocking out the very logic under test, or only through a full end-to-end path where a unit-level seam was reasonable.
 - Where the plan named seams (pure core vs. I/O shell, injected collaborators), the implementation actually honors them.
+
+CONCURRENCY  (only if the change touches concurrency, shared mutable state, ordering, caching, or retries — otherwise skip this dimension entirely; classify any finding here under the "correctness" category, so it is never waivable)
+- No unguarded access to state shared across threads/tasks/requests; read-modify-write on shared state is atomic (or serialized), not a check-then-act that can interleave.
+- No reliance on an ordering the runtime does not guarantee (async completion order, event delivery, parallel test isolation).
+- Operations that can be retried or delivered more than once are idempotent, and no fact is left in a partially-updated state on an interleaved failure path.
+- If the plan named concurrency hazards, each is either designed out or covered by a detector/deterministic-interleaving test as the plan promised — flag any hazard that was named but left unaddressed.
 
 SECURITY
 - No secrets, tokens, or credentials committed or written to logs; sensitive values come from an env var or secret store.
