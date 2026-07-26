@@ -46,6 +46,19 @@ Local mode exists so the human can review each phase's changes *before* they're 
 
 Because the commit lands on approval, every later phase still starts from a clean, committed base — the per-phase clean-tree assumption and Phase 5's `base...HEAD` review diff are unaffected. The only window where changes live solely in the working tree is the human's active review; that window is not crash-safe across sessions, an accepted trade for local mode's single-session, human-present workflow.
 
+## Checkpoint discipline
+
+Every role-boundary checkpoint in this workflow — clarify→plan, plan→implement, implement→test, test→review, and the Phase 6 minor-issue and architecture-waiver decision points — follows the same two rules. Each checkpoint below states its own question; this section is the one place the surrounding discipline is defined, so read it once here rather than re-deriving it per checkpoint.
+
+**Emit exactly once.** The checkpoint question is the single turn-ending message, emitted only *after* that boundary's `state.sh`/artifact calls have returned. Never narrate or pre-announce it as tool-call preamble, and never restate it again after the tools return — one emission, not two. On adapters that echo a task/tool-call description back to the user (e.g. Antigravity's `ManageTask`), the question text goes *only* in the final message, never also into the task/tool-call description — that echo is exactly how a checkpoint prompt ends up shown twice, once as preamble and once as the real message. A checkpoint that appears twice, in any form, is a bug regardless of which adapter produced it.
+
+**Classify the reply before acting.** A reply to a checkpoint question is exactly one of three things:
+- **(a) Explicit affirmative approval** ("yes", "go ahead", "proceed", "approved") — proceed.
+- **(b) Explicit stop/handoff** ("stop here", "not now", "let someone else pick it up") — stop, per that checkpoint's stop branch.
+- **(c) Anything else** — a question, a comment, an ambiguous or partial reply — is **not consent**. Answer or address it, then **re-ask the same checkpoint** and wait for a real answer. A question *about* the checkpoint itself (e.g. "why do I see this twice?") is never a go-ahead, no matter how reasonable it would be to read it as one. A reply that mixes a question with an approval should be answered first, and only treated as proceeding if the approval part is unambiguous; if there's any doubt, re-ask rather than guess.
+
+Treating (c) as (a) — auto-continuing on anything that isn't an explicit stop — silently launches the next phase's sub-agent without the go-ahead the checkpoint exists to require, which is exactly the failure this rule prevents.
+
 ---
 
 ## Phase 0: Resume Check
@@ -156,6 +169,8 @@ Clarification and planning are not the same act, and not necessarily the same pe
 
 > "Clarification recorded. Should plan drafting start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
 
+Follow **Checkpoint discipline** (top of this file): emit that question once, and treat only an explicit affirmative as consent — a question or ambiguous reply is not approval, so answer it and re-ask.
+
 - **Proceed now**: continue directly into "Between Phase 1 and Phase 2" → Phase 2 below, same session.
 - **Stop here**: the state is already correctly recorded (`stage:clarify`, `gate:analysis-approved`) — that's exactly what Phase 0 reads on the next invocation to resume at Phase 2 with the clarification already loaded (see Phase 0's `clarify` branch). Restore `$ORIGINAL_BRANCH`, tell the user plan drafting is ready to start whenever (same command, this or a different session/person: `/implement-issue <number>`), and end here — this is a clean stop, not a failure to report.
 
@@ -258,6 +273,8 @@ Plan approval and implementation are not the same act, and not necessarily the s
 
 > "Plan approved and recorded. Should implementation start now in this session, or stop here for someone (possibly a different person, machine, or session) to pick it up later?"
 
+Follow **Checkpoint discipline** (top of this file): this question is the single turn-ending message — never also echoed as a tool-call/task-description preamble — and a reply that isn't an explicit go-ahead (e.g. a question about the checkpoint itself) is not consent to start Phase 3; answer it and re-ask.
+
 - **Proceed now**: continue directly into Phase 3 below, same session.
 - **Stop here**: the state is already correctly recorded (`stage:implement`, `gate:plan-approved`) — that's exactly what Phase 0 reads on the next invocation to resume at Phase 3 with the clarification and plan already loaded (see Phase 0's `implement`/`test`/`review`/`ci` branch). Restore `$ORIGINAL_BRANCH`, tell the user implementation is ready to start whenever (same command, this or a different session/person: `/implement-issue <number>`), and end here — this is a clean stop, not a failure to report.
 
@@ -348,7 +365,7 @@ Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> test`
 
 ### Checkpoint: do not auto-continue into testing
 
-Implementation and testing are not the same act, and not necessarily the same person — a developer implementing the feature does not imply they (or anyone present in this session) is the QA person who should now test it. Ask explicitly.
+Implementation and testing are not the same act, and not necessarily the same person — a developer implementing the feature does not imply they (or anyone present in this session) is the QA person who should now test it. Ask explicitly. Follow **Checkpoint discipline** (top of this file) for both modes below: emit the question once, and a reply that isn't an explicit approval — a question, a comment — is not consent to start Phase 4; answer it and re-ask.
 
 **Worktree mode** — the work is committed and pushed:
 
@@ -495,7 +512,7 @@ Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> review`
 
 ### Checkpoint: do not auto-continue into review
 
-Testing and review are not the same act, and not necessarily the same person — a QA person confirming tests pass does not imply they (or anyone present in this session) is the developer who should now review the code. Ask explicitly.
+Testing and review are not the same act, and not necessarily the same person — a QA person confirming tests pass does not imply they (or anyone present in this session) is the developer who should now review the code. Ask explicitly. Follow **Checkpoint discipline** (top of this file) for both modes below: emit the question once, and a reply that isn't an explicit approval — a question, a comment — is not consent to start Phase 5; answer it and re-ask.
 
 **Worktree mode** — the tests are committed and pushed:
 
@@ -623,6 +640,8 @@ First triage the blocking findings by their **category** (the reviewer tags each
   >
   > For each, should I fix it or accept it as an intentional deviation (give a one-line reason)? Any security/correctness/test findings will be fixed automatically.
 
+  Follow **Checkpoint discipline** (top of this file): ask this once, and treat only an explicit per-finding fix/accept answer as a decision — a question or a vague reply decides nothing, so answer it and re-ask.
+
   - For each **accepted** finding: do NOT send it to the fix agent. Record it durably by editing the `## Review Findings` comment to mark that finding **Waived — <rationale>** (so a resuming session and any reader sees the decision), and add it to the running **accepted architecture deviations** list you pass into every subsequent Phase 5 re-review (as ACCEPTED ARCHITECTURE DEVIATIONS) so it is never re-flagged.
   - For each finding the developer chooses to **fix**: fold it into the list below.
 
@@ -690,6 +709,8 @@ Reproduce the numbered minor findings **in full** — verbatim from the `## Revi
 > <the numbered list, verbatim>
 >
 > Should I fix these too, or proceed to the PR?
+
+Follow **Checkpoint discipline** (top of this file): ask this once, and a reply that isn't a clear fix-or-proceed answer — a question, an ambiguous comment — is not a decision; answer it and re-ask.
 
 ### If review returns LGTM:
 
