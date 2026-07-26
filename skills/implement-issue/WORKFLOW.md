@@ -57,6 +57,8 @@ Every role-boundary checkpoint in this workflow — clarify→plan, plan→imple
 - **(b) Explicit stop/handoff** ("stop here", "not now", "let someone else pick it up") — stop, per that checkpoint's stop branch.
 - **(c) Anything else** — a question, a comment, an ambiguous or partial reply — is **not consent**. Answer or address it, then **re-ask the same checkpoint** and wait for a real answer. A question *about* the checkpoint itself (e.g. "why do I see this twice?") is never a go-ahead, no matter how reasonable it would be to read it as one. A reply that mixes a question with an approval should be answered first, and only treated as proceeding if the approval part is unambiguous; if there's any doubt, re-ask rather than guess.
 
+This three-way split classifies consent to proceed; it does not override a checkpoint's own explicit non-proceed action branches. A mode-specific checkpoint may define an additional first-class directive — e.g. the local-mode review gate's "request changes" (see "Local-mode review gate" above) — which routes to its own branch rather than falling into (c) as ambiguous noise.
+
 Treating (c) as (a) — auto-continuing on anything that isn't an explicit stop — silently launches the next phase's sub-agent without the go-ahead the checkpoint exists to require, which is exactly the failure this rule prevents.
 
 ---
