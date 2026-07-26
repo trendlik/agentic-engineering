@@ -47,6 +47,10 @@ skill no longer has — verify before trusting it.
   paper over an approval prompt; secret handling follows the `SKILL_REPO_TOKEN` pattern.
 - Edge cases specific to this skill's mechanics (missing label, offline `gh`, absent
   artifact comment, BSD vs GNU userland) have a test in the `scripts/tests/` suite.
+- When a change adds or edits checkpoint / user-reply handling, verify the new wording
+  is consistent with ALL existing reply branches — especially local mode's "request
+  changes" gate action — so a new reply taxonomy doesn't reclassify or contradict an
+  existing first-class directive. (issue #27, 2026-07-26, skill@ca06aaf)
 
 ## CI quirks (Phase 7)
 
