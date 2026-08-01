@@ -42,6 +42,8 @@ The commands below assume the skill is reachable at
 `~/.claude/skills/implement-issue`. If you installed via a different adapter,
 substitute that path (e.g. `~/.gemini/config/skills/implement-issue`).
 
+> **Interactive onboarding:** Once the skill is installed on your machine, you can run `/onboard-implement-issue` from any target repository root. It interactively drives the per-repo setup steps documented below (running checks, asking at decision points, and applying configuration), delegating to the existing scripts and using this document as its authoritative reference.
+
 ## Quick checklist
 
 ```
