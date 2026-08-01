@@ -21,12 +21,21 @@ versioned here.
   Runs in an isolated git worktree by default; pass `--local` to work directly in
   your checkout and review each phase's changes in your editor before they're committed.
   Full setup, start to finish (install the skill, then onboard a project), lives in
-  [`ONBOARDING.md`](skills/implement-issue/ONBOARDING.md).
+  [`ONBOARDING.md`](skills/implement-issue/ONBOARDING.md) — or use the
+  `onboard-implement-issue` skill below to drive it interactively.
 
   The flow is driven by **GitHub Issues** (via the `gh` CLI) — the only supported
   tracker today. It can be adapted to other systems (Jira, Linear, GitLab), but
   that means editing the skill's scripts and phases; it won't work with a non-GitHub
   tracker out of the box.
+
+- `onboard-implement-issue` — the interactive setup companion to `implement-issue`.
+  A checkpoint-driven driver that makes a target repository compatible with
+  `implement-issue`: it runs the doctor check, seeds `.implement-issue/LEARNINGS.md`,
+  sets branch conventions, syncs the permission allowlist, enforces the CI gate, and
+  backfills outcomes — using [`ONBOARDING.md`](skills/implement-issue/ONBOARDING.md)
+  as the single source of truth. Run `/onboard-implement-issue` once per repository
+  from the target repo's root. It stages changes for review but never commits them.
 
 ## Requirements
 
