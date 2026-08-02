@@ -15,3 +15,15 @@ jobs:
       # runner stubs `gh`, so no network or GitHub token is needed.
       - name: Run implement-issue script tests
         run: skills/implement-issue/scripts/tests/run-tests.sh
+
+  release-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # bash and git are preinstalled on ubuntu-latest. The suite stands up
+      # its own local bare repos as a stand-in "origin" and sets its own
+      # per-clone git identity (see tests/test_release.sh), so it needs no
+      # network, no GitHub token, and no global git user.name/user.email.
+      - name: Run release.sh tests
+        run: tests/run-tests.sh
