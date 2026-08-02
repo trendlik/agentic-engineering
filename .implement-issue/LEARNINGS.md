@@ -29,6 +29,12 @@ skill no longer has — verify before trusting it.
 - Keep deterministic mechanics in tested scripts under `scripts/`, not as new inline
   bash in WORKFLOW.md (mirrors the existing `scripts/` design). Any new script ships
   with a test in `scripts/tests/`.
+- Release/publish/deploy tooling must source the artifact from the canonical remote's
+  committed state (fetch, then archive a tag or remote-tracking ref) — never the local
+  working tree or local HEAD, which can carry uncommitted or unpushed state. State the
+  authoritative source explicitly in the plan, and decide tag/push side effects (does the
+  tool push the tag, or only build the snapshot?) up front rather than during
+  implementation. (issue #31, 2026-08-02, skill@a9492e4)
 
 ## Build & test (Phase 4)
 
@@ -51,6 +57,13 @@ skill no longer has — verify before trusting it.
   is consistent with ALL existing reply branches — especially local mode's "request
   changes" gate action — so a new reply taxonomy doesn't reclassify or contradict an
   existing first-class directive. (issue #27, 2026-07-26, skill@ca06aaf)
+- Scripts that build filesystem paths from env vars/config/frontmatter and then mutate
+  them (`chmod -R`, `rm -rf`, archive-extract, `mv`) must: (a) validate each path
+  component against traversal (reject `.`/`..`/leading-dot/`..`-containing values), not
+  just a character-class regex; and (b) populate a destination atomically — stage into a
+  temp dir and `mv` into place on success, with trap/cleanup on failure — so a
+  mid-operation failure never leaves a partial artifact (especially one that a later
+  immutability/exists guard would then refuse to overwrite). (issue #31, 2026-08-02, skill@a9492e4)
 
 ## CI quirks (Phase 7)
 
