@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# Tests for release.sh, run against throwaway temp git repos (see run-tests.sh
+# for harness setup; this file is also runnable standalone). Never touches
+# the real repo, the real ~/.agents/releases store, or real GitHub.
+#
+# Each test "family" is a temp bare repo (standing in for GitHub/origin) plus
+# a clone of it (standing in for the checkout release.sh is run from), so the
+# fetch + push path is exercised end-to-end without any network access.
+set -uo pipefail
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$TEST_DIR/.." && pwd)"
+# shellcheck source=lib/assert.sh
+source "$TEST_DIR/lib/assert.sh"
+
+RELEASE="$ROOT_DIR/release.sh"
+
+WORK_DIR=$(mktemp -d)
+cleanup() {
+  # chmod -R a-w snapshots would otherwise make rm -rf fail partway through.
+  chmod -R u+w "$WORK_DIR" 2>/dev/null || true
+  rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT
+
+# Sets up a fresh "$1/bare" (bare repo, stands in for origin) and "$1/clone"
+# (a clone of it, stands in for the checkout release.sh runs from), with a
+# single committed-and-pushed skills/implement-issue/SKILL.md whose version
+# frontmatter is "$2" (verbatim, so callers can also pass a missing/malformed
+# value -- an empty string omits the version: line entirely).
+setup_family() {
+  local family=$1 version_line=$2 clone
+  clone="$family/clone"
+  mkdir -p "$family"
+  git init -q --bare "$family/bare"
+  git clone -q "$family/bare" "$clone" 2>/dev/null
+  git -C "$clone" config user.email test@example.com
+  git -C "$clone" config user.name "Test"
+  mkdir -p "$clone/skills/implement-issue"
+  write_skill_md "$clone" "$version_line"
+  git -C "$clone" add -A
+  git -C "$clone" commit -q -m "init"
+  git -C "$clone" push -q origin HEAD
+}
+
+write_skill_md() {
+  local clone=$1 version_line=$2
+  {
+    echo "---"
+    echo "name: implement-issue"
+    echo "description: test fixture"
+    [[ -n "$version_line" ]] && echo "$version_line"
+    echo "---"
+    echo "# implement-issue (test fixture)"
+  } > "$clone/skills/implement-issue/SKILL.md"
+}
+
+# Commits the clone's current skills/implement-issue/SKILL.md and pushes it
+# to origin -- i.e. this is what "the canonical version" moving forward looks
+# like, as opposed to just editing the working tree.
+commit_and_push() {
+  local clone=$1 msg=$2
+  git -C "$clone" commit -aqm "$msg"
+  git -C "$clone" push -q origin HEAD
+}
+
+run_release() {
+  local clone=$1 store=$2; shift 2
+  env SKILL_NAME=implement-issue REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
+}
+
+echo "release.sh"
+
+# --- (a) happy path: first release of a version succeeds, is pushed to
+#         origin, and is complete ---
+FAM_A="$WORK_DIR/fam-a"
+BARE_A="$FAM_A/bare"
+CLONE_A="$FAM_A/clone"
+STORE_A="$WORK_DIR/store-a"
+setup_family "$FAM_A" "version: 1.0.0"
+assert_success "first release of a version exits 0" run_release "$CLONE_A" "$STORE_A"
+assert_success "archived SKILL.md exists in the release dir" \
+  bash -c "[[ -f '$STORE_A/implement-issue/1.0.0/SKILL.md' ]]"
+assert_success "archived SKILL.md carries the released version" \
+  bash -c "grep -q '^version: 1.0.0\$' '$STORE_A/implement-issue/1.0.0/SKILL.md'"
+assert_success "scoped git tag was created locally" \
+  git -C "$CLONE_A" rev-parse -q --verify refs/tags/implement-issue/v1.0.0
+assert_success "scoped git tag was pushed to origin (the bare repo)" \
+  bash -c "git -C '$BARE_A' tag | grep -qx 'implement-issue/v1.0.0'"
+
+# --- (b) the released snapshot is read-only ---
+assert_failure "cannot create a new file inside a released snapshot" \
+  bash -c "echo x > '$STORE_A/implement-issue/1.0.0/newfile'"
+assert_failure "cannot modify a file inside a released snapshot" \
+  bash -c "echo x >> '$STORE_A/implement-issue/1.0.0/SKILL.md'"
+
+# --- (c) second run for the same version refuses (immutability) ---
+assert_failure "refuses to overwrite an already-released version" run_release "$CLONE_A" "$STORE_A"
+
+# --- (d) KEY REGRESSION TEST: the version released is the one committed and
+#         pushed to origin, NOT whatever is dirty in the local working tree.
+#         Bump to 2.0.0 for real (commit + push), then dirty the working tree
+#         to a third, never-committed version (9.9.9) and release again --
+#         the release must be 2.0.0, and 9.9.9 must never appear anywhere. ---
+write_skill_md "$CLONE_A" "version: 2.0.0"
+commit_and_push "$CLONE_A" "bump to 2.0.0"
+write_skill_md "$CLONE_A" "version: 9.9.9"  # uncommitted -- never pushed
+assert_success "release succeeds while the working tree is dirty" run_release "$CLONE_A" "$STORE_A"
+assert_success "the PUSHED version (2.0.0) was released" \
+  bash -c "[[ -f '$STORE_A/implement-issue/2.0.0/SKILL.md' ]]"
+assert_failure "the DIRTY working-tree version (9.9.9) was NOT released" \
+  bash -c "[[ -e '$STORE_A/implement-issue/9.9.9' ]]"
+assert_failure "no tag was created for the dirty, uncommitted version" \
+  git -C "$CLONE_A" rev-parse -q --verify refs/tags/implement-issue/v9.9.9
+git -C "$CLONE_A" checkout -q -- skills/implement-issue/SKILL.md  # clean up the dirty state
+
+# --- (e) --dry-run is a no-op: no tag, no push, no release dir ---
+FAM_E="$WORK_DIR/fam-e"
+BARE_E="$FAM_E/bare"
+CLONE_E="$FAM_E/clone"
+STORE_E="$WORK_DIR/store-e"
+setup_family "$FAM_E" "version: 3.0.0"
+assert_success "--dry-run exits 0" run_release "$CLONE_E" "$STORE_E" --dry-run
+assert_failure "--dry-run does not create the release directory" \
+  bash -c "[[ -e '$STORE_E/implement-issue/3.0.0' ]]"
+assert_failure "--dry-run does not create the git tag locally" \
+  git -C "$CLONE_E" rev-parse -q --verify refs/tags/implement-issue/v3.0.0
+assert_failure "--dry-run does not push anything to origin" \
+  bash -c "[[ -n \$(git -C '$BARE_E' tag) ]]"
+
+# --- (f) missing version field errors before any mutation ---
+FAM_F="$WORK_DIR/fam-f"
+CLONE_F="$FAM_F/clone"
+STORE_F="$WORK_DIR/store-f"
+setup_family "$FAM_F" ""
+assert_failure "errors when SKILL.md has no version field" run_release "$CLONE_F" "$STORE_F"
+assert_failure "no release store created on missing-version error" \
+  bash -c "[[ -e '$STORE_F' ]]"
+
+# --- (g) malformed version errors before any mutation ---
+FAM_G="$WORK_DIR/fam-g"
+CLONE_G="$FAM_G/clone"
+STORE_G="$WORK_DIR/store-g"
+setup_family "$FAM_G" "version: 1.0"
+assert_failure "errors when version is not full semver (X.Y.Z)" run_release "$CLONE_G" "$STORE_G"
+assert_failure "no release store created on malformed-version error" \
+  bash -c "[[ -e '$STORE_G' ]]"
+
+FAM_G2="$WORK_DIR/fam-g2"
+CLONE_G2="$FAM_G2/clone"
+STORE_G2="$WORK_DIR/store-g2"
+setup_family "$FAM_G2" "version: not-a-version"
+assert_failure "errors when version is non-numeric garbage" run_release "$CLONE_G2" "$STORE_G2"
+
+# --- (h) a pre-existing tag that already points at the released commit is
+#         reused, not re-created or errored on ---
+FAM_H="$WORK_DIR/fam-h"
+BARE_H="$FAM_H/bare"
+CLONE_H="$FAM_H/clone"
+STORE_H="$WORK_DIR/store-h"
+setup_family "$FAM_H" "version: 5.0.0"
+git -C "$CLONE_H" tag -a implement-issue/v5.0.0 -m "pre-existing, correct tag" HEAD >/dev/null
+git -C "$CLONE_H" push -q origin implement-issue/v5.0.0
+assert_success "release succeeds when a matching tag already exists" run_release "$CLONE_H" "$STORE_H"
+assert_success "release directory was populated from the reused tag" \
+  bash -c "[[ -f '$STORE_H/implement-issue/5.0.0/SKILL.md' ]]"
+
+# --- (i) a pre-existing tag that points at a DIFFERENT commit than the
+#         version being released is an error -- never move an existing tag ---
+FAM_I="$WORK_DIR/fam-i"
+CLONE_I="$FAM_I/clone"
+STORE_I="$WORK_DIR/store-i"
+setup_family "$FAM_I" "version: 0.0.1"
+decoy_sha=$(git -C "$CLONE_I" rev-parse HEAD)
+write_skill_md "$CLONE_I" "version: 6.0.0"
+commit_and_push "$CLONE_I" "bump to 6.0.0"
+git -C "$CLONE_I" tag -a implement-issue/v6.0.0 -m "wrong commit" "$decoy_sha" >/dev/null
+assert_failure "errors when the tag exists but points at a different commit" \
+  run_release "$CLONE_I" "$STORE_I"
+assert_failure "no release directory created on tag-conflict error" \
+  bash -c "[[ -e '$STORE_I/implement-issue/6.0.0' ]]"
+
+# --- (j) missing parent directories under RELEASE_STORE are created ---
+FAM_J="$WORK_DIR/fam-j"
+CLONE_J="$FAM_J/clone"
+STORE_J="$WORK_DIR/store-j/does/not/exist/yet"
+setup_family "$FAM_J" "version: 7.0.0"
+assert_success "creates missing RELEASE_STORE parent directories" run_release "$CLONE_J" "$STORE_J"
+assert_success "release directory exists under the newly-created parents" \
+  bash -c "[[ -f '$STORE_J/implement-issue/7.0.0/SKILL.md' ]]"
+
+# --- (k) basic usage error ---
+FAM_K="$WORK_DIR/fam-k"
+CLONE_K="$FAM_K/clone"
+STORE_K="$WORK_DIR/store-k"
+setup_family "$FAM_K" "version: 1.0.0"
+assert_failure "errors on an unrecognized flag" run_release "$CLONE_K" "$STORE_K" --bogus-flag
+
+echo "release.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
+[[ $ASSERT_FAIL -eq 0 ]]
