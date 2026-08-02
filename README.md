@@ -49,11 +49,10 @@ Versioned skills (currently: `implement-issue`) split that single collapsed
 role into three:
 
 1. **SOURCE** (mutable, where you develop) —
-   `~/Developer/GitHub/agentic-engineering/skills/<skill>/`. This is the
-   `skills/` directory in this repo. Its `SKILL.md` frontmatter carries the
-   `version:` field, which is the single source of truth — the release tag,
-   the release-store directory, and the `CHANGELOG.md` entry all derive from
-   it, not the other way around.
+   `<repo-dir>/skills/<skill>/`. This is the `skills/` directory in this repo. 
+   Its `SKILL.md` frontmatter carries the `version:` field, which is the single 
+   source of truth — the release tag, the release-store directory, and the 
+   `CHANGELOG.md` entry all derive from it, not the other way around.
 2. **RELEASE STORE** (immutable version snapshots, outside the repo) —
    `~/.agents/releases/<skill>/<version>/`. A frozen snapshot of the scoped
    git tag `<skill>/v<version>`, produced by [`release.sh`](release.sh) via
