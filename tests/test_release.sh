@@ -226,5 +226,62 @@ assert_success "release succeeds with a double-quoted version value" \
 assert_success "quotes are stripped from the released version directory name" \
   bash -c "[[ -f '$STORE_M/implement-issue/4.5.6/SKILL.md' ]]"
 
+# --- (n) SKILL.md entirely absent at REF -- distinct from case (f), where
+#         SKILL.md exists but has no version: field. Here the
+#         `git show REF:skills/<skill>/SKILL.md` itself fails because no
+#         SKILL.md was ever committed. ---
+FAM_N="$WORK_DIR/fam-n"
+BARE_N="$FAM_N/bare"
+CLONE_N="$FAM_N/clone"
+STORE_N="$WORK_DIR/store-n"
+mkdir -p "$FAM_N"
+git init -q --bare "$BARE_N"
+git clone -q "$BARE_N" "$CLONE_N" 2>/dev/null
+git -C "$CLONE_N" config user.email test@example.com
+git -C "$CLONE_N" config user.name "Test"
+mkdir -p "$CLONE_N/skills/implement-issue"
+echo "no SKILL.md here" > "$CLONE_N/skills/implement-issue/.gitkeep"
+git -C "$CLONE_N" add -A
+git -C "$CLONE_N" commit -q -m "init (no SKILL.md committed)"
+git -C "$CLONE_N" push -q origin HEAD
+assert_failure "errors when SKILL.md is entirely absent at REF" run_release "$CLONE_N" "$STORE_N"
+assert_failure "no release store created when SKILL.md is absent" \
+  bash -c "[[ -e '$STORE_N' ]]"
+
+# --- (o) --dry-run still performs validation, not just a happy-path preview:
+#         it must die when DEST already exists (the immutability guard runs
+#         before the dry-run early-exit). ---
+FAM_O="$WORK_DIR/fam-o"
+CLONE_O="$FAM_O/clone"
+STORE_O="$WORK_DIR/store-o"
+setup_family "$FAM_O" "version: 8.0.0"
+assert_success "real release (setup for dry-run-vs-existing-DEST case)" run_release "$CLONE_O" "$STORE_O"
+assert_failure "--dry-run dies when DEST already exists" run_release "$CLONE_O" "$STORE_O" --dry-run
+
+# --- (p) --dry-run still performs validation: it must die when the tag
+#         already exists pointing at a different commit than the version
+#         being released (never silently preview past a tag conflict). ---
+FAM_P="$WORK_DIR/fam-p"
+CLONE_P="$FAM_P/clone"
+STORE_P="$WORK_DIR/store-p"
+setup_family "$FAM_P" "version: 0.0.2"
+decoy_sha_p=$(git -C "$CLONE_P" rev-parse HEAD)
+write_skill_md "$CLONE_P" "version: 9.0.0"
+commit_and_push "$CLONE_P" "bump to 9.0.0"
+git -C "$CLONE_P" tag -a implement-issue/v9.0.0 -m "wrong commit" "$decoy_sha_p" >/dev/null
+assert_failure "--dry-run dies when tag exists but points at a different commit" \
+  run_release "$CLONE_P" "$STORE_P" --dry-run
+assert_failure "--dry-run (tag conflict) creates no release directory" \
+  bash -c "[[ -e '$STORE_P/implement-issue/9.0.0' ]]"
+
+# NOTE: a test asserting "a failed archive leaves no DEST behind" (the new
+# staging+mv behavior from the release.sh fix) was deliberately NOT added
+# here. Forcing `git archive | tar` itself to fail requires either corrupting
+# git objects mid-test or relying on filesystem permission checks (e.g.
+# chmod a-w a parent dir) that silently no-op when tests run as root (common
+# in CI/containers) -- both brittle. The mktemp-based staging directory is
+# exercised on every successful run above (cases a, d, h, j, l, m, o, p), so
+# the plumbing is covered; only the failure-path cleanup itself is untested.
+
 echo "release.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

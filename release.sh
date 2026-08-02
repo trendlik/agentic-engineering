@@ -74,6 +74,12 @@ done
 
 : "${SKILL_NAME:=implement-issue}"
 [[ "$SKILL_NAME" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid SKILL_NAME: $SKILL_NAME"
+# Defense-in-depth against path traversal via this operator-set override: the
+# character-class regex above already forbids '/', but would still accept
+# ".", "..", or a leading "." -- any of which could point DEST outside
+# RELEASE_STORE (e.g. SKILL_NAME=".." -> DEST=$RELEASE_STORE/../<version>).
+[[ "$SKILL_NAME" == "." || "$SKILL_NAME" == ".." || "$SKILL_NAME" == *..* || "$SKILL_NAME" == .* ]] \
+  && die "invalid SKILL_NAME: $SKILL_NAME (must not be '.', '..', start with '.', or contain '..')"
 
 : "${ORIGIN:=origin}"
 [[ "$ORIGIN" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid ORIGIN: $ORIGIN"
@@ -172,13 +178,36 @@ git -C "$REPO_ROOT" push "$ORIGIN" "$TAG" \
   || die "failed to push tag $TAG to $ORIGIN"
 ok "pushed tag $TAG to $ORIGIN"
 
-# --- 6. Archive the skill subtree at TAG into DEST. ---
-mkdir -p "$DEST" || die "could not create $DEST"
+# --- 6. Archive the skill subtree at TAG into DEST. Populate a temporary
+#        staging directory first and only `mv` it into place on success, so a
+#        failed archive/extract never leaves a partial, un-chmod'd DEST
+#        behind -- which would otherwise permanently wedge that version
+#        behind the DEST-exists immutability guard above until manual
+#        cleanup. The staging dir is created as a sibling of DEST (under the
+#        same $SKILL_NAME directory) so the final `mv` is a same-filesystem
+#        rename, not a copy. ---
+STORE_SKILL_DIR="$RELEASE_STORE/$SKILL_NAME"
+mkdir -p "$STORE_SKILL_DIR" || die "could not create $STORE_SKILL_DIR"
 
-git -C "$REPO_ROOT" archive "$TAG:skills/$SKILL_NAME" | tar -x -C "$DEST" \
+STAGING=""
+cleanup_staging() {
+  [[ -n "$STAGING" && -e "$STAGING" ]] || return 0
+  chmod -R u+w "$STAGING" 2>/dev/null || true
+  rm -rf "$STAGING"
+}
+trap cleanup_staging EXIT
+
+STAGING=$(mktemp -d "$STORE_SKILL_DIR/.release-$version.XXXXXX") \
+  || die "could not create staging directory under $STORE_SKILL_DIR"
+
+git -C "$REPO_ROOT" archive "$TAG:skills/$SKILL_NAME" | tar -x -C "$STAGING" \
   || die "git archive failed for $TAG:skills/$SKILL_NAME"
 
-# --- 7. Freeze it read-only. ---
+mv "$STAGING" "$DEST" || die "could not move staged release into place: $DEST"
+STAGING=""  # moved into DEST; nothing left for cleanup_staging to remove
+
+# --- 7. Freeze it read-only. Chmod AFTER the move (not before), so the move
+#        itself is never done on a read-only staging dir. ---
 chmod -R a-w "$DEST" || die "could not chmod -R a-w $DEST"
 
 ok "released $SKILL_NAME v$version -> $DEST (read-only)"
