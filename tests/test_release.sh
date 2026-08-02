@@ -28,7 +28,7 @@ trap cleanup EXIT
 # frontmatter is "$2" (verbatim, so callers can also pass a missing/malformed
 # value -- an empty string omits the version: line entirely).
 setup_family() {
-  local family=$1 version_line=$2 clone
+  local family=$1 version_line=$2 extra_body=${3:-} clone
   clone="$family/clone"
   mkdir -p "$family"
   git init -q --bare "$family/bare"
@@ -36,14 +36,17 @@ setup_family() {
   git -C "$clone" config user.email test@example.com
   git -C "$clone" config user.name "Test"
   mkdir -p "$clone/skills/implement-issue"
-  write_skill_md "$clone" "$version_line"
+  write_skill_md "$clone" "$version_line" "$extra_body"
   git -C "$clone" add -A
   git -C "$clone" commit -q -m "init"
   git -C "$clone" push -q origin HEAD
 }
 
+# extra_body (optional) is appended as an extra line after the fixture's
+# heading -- used to plant a decoy "version:"-looking line in the PROSE BODY,
+# outside the frontmatter block, to prove release.sh never picks it up.
 write_skill_md() {
-  local clone=$1 version_line=$2
+  local clone=$1 version_line=$2 extra_body=${3:-}
   {
     echo "---"
     echo "name: implement-issue"
@@ -51,6 +54,7 @@ write_skill_md() {
     [[ -n "$version_line" ]] && echo "$version_line"
     echo "---"
     echo "# implement-issue (test fixture)"
+    [[ -n "$extra_body" ]] && echo "$extra_body"
   } > "$clone/skills/implement-issue/SKILL.md"
 }
 
@@ -194,6 +198,33 @@ CLONE_K="$FAM_K/clone"
 STORE_K="$WORK_DIR/store-k"
 setup_family "$FAM_K" "version: 1.0.0"
 assert_failure "errors on an unrecognized flag" run_release "$CLONE_K" "$STORE_K" --bogus-flag
+
+# --- (l) a stray "version:"-looking line in the skill's PROSE BODY (after the
+#         frontmatter's closing "---") must never be picked up -- only the
+#         version field inside the FIRST frontmatter block counts. This
+#         guards the awk two-delimiter extraction described in release.sh's
+#         own comments. ---
+FAM_L="$WORK_DIR/fam-l"
+CLONE_L="$FAM_L/clone"
+STORE_L="$WORK_DIR/store-l"
+setup_family "$FAM_L" "version: 1.2.3" "Mentions a decoy in prose: version: 9.9.9"
+assert_success "release succeeds with a decoy 'version:' mention in the body" \
+  run_release "$CLONE_L" "$STORE_L"
+assert_success "the FRONTMATTER version (1.2.3) was released" \
+  bash -c "[[ -f '$STORE_L/implement-issue/1.2.3/SKILL.md' ]]"
+assert_failure "the body decoy version (9.9.9) was NOT released" \
+  bash -c "[[ -e '$STORE_L/implement-issue/9.9.9' ]]"
+
+# --- (m) a quoted version value (YAML-style "1.2.3" or '1.2.3') has its
+#         quotes stripped by release.sh, per its own quote-stripping sed step ---
+FAM_M="$WORK_DIR/fam-m"
+CLONE_M="$FAM_M/clone"
+STORE_M="$WORK_DIR/store-m"
+setup_family "$FAM_M" 'version: "4.5.6"'
+assert_success "release succeeds with a double-quoted version value" \
+  run_release "$CLONE_M" "$STORE_M"
+assert_success "quotes are stripped from the released version directory name" \
+  bash -c "[[ -f '$STORE_M/implement-issue/4.5.6/SKILL.md' ]]"
 
 echo "release.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
