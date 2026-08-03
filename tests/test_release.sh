@@ -28,15 +28,15 @@ trap cleanup EXIT
 # frontmatter is "$2" (verbatim, so callers can also pass a missing/malformed
 # value -- an empty string omits the version: line entirely).
 setup_family() {
-  local family=$1 version_line=$2 extra_body=${3:-} clone
+  local family=$1 version_line=$2 extra_body=${3:-} skill_name=${4:-implement-issue} clone
   clone="$family/clone"
   mkdir -p "$family"
   git init -q --bare "$family/bare"
   git clone -q "$family/bare" "$clone" 2>/dev/null
   git -C "$clone" config user.email test@example.com
   git -C "$clone" config user.name "Test"
-  mkdir -p "$clone/skills/implement-issue"
-  write_skill_md "$clone" "$version_line" "$extra_body"
+  mkdir -p "$clone/skills/$skill_name"
+  write_skill_md "$clone" "$version_line" "$extra_body" "$skill_name"
   git -C "$clone" add -A
   git -C "$clone" commit -q -m "init"
   git -C "$clone" push -q origin HEAD
@@ -46,16 +46,16 @@ setup_family() {
 # heading -- used to plant a decoy "version:"-looking line in the PROSE BODY,
 # outside the frontmatter block, to prove release.sh never picks it up.
 write_skill_md() {
-  local clone=$1 version_line=$2 extra_body=${3:-}
+  local clone=$1 version_line=$2 extra_body=${3:-} skill_name=${4:-implement-issue}
   {
     echo "---"
-    echo "name: implement-issue"
+    echo "name: $skill_name"
     echo "description: test fixture"
     [[ -n "$version_line" ]] && echo "$version_line"
     echo "---"
-    echo "# implement-issue (test fixture)"
+    echo "# $skill_name (test fixture)"
     [[ -n "$extra_body" ]] && echo "$extra_body"
-  } > "$clone/skills/implement-issue/SKILL.md"
+  } > "$clone/skills/$skill_name/SKILL.md"
 }
 
 # Commits the clone's current skills/implement-issue/SKILL.md and pushes it
@@ -70,6 +70,11 @@ commit_and_push() {
 run_release() {
   local clone=$1 store=$2; shift 2
   env SKILL_NAME=implement-issue REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
+}
+
+run_release_skill() {
+  local skill=$1 clone=$2 store=$3; shift 3
+  env SKILL_NAME="$skill" REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
 }
 
 echo "release.sh"
@@ -274,6 +279,23 @@ assert_failure "--dry-run dies when tag exists but points at a different commit"
 assert_failure "--dry-run (tag conflict) creates no release directory" \
   bash -c "[[ -e '$STORE_P/implement-issue/9.0.0' ]]"
 
+# --- (q) releases onboard-implement-issue when SKILL_NAME=onboard-implement-issue ---
+FAM_Q="$WORK_DIR/fam-q"
+BARE_Q="$FAM_Q/bare"
+CLONE_Q="$FAM_Q/clone"
+STORE_Q="$WORK_DIR/store-q"
+setup_family "$FAM_Q" "version: 1.0.0" "" "onboard-implement-issue"
+assert_success "release onboard-implement-issue exits 0" \
+  run_release_skill "onboard-implement-issue" "$CLONE_Q" "$STORE_Q"
+assert_success "archived SKILL.md exists in the release dir for onboard-implement-issue" \
+  bash -c "[[ -f '$STORE_Q/onboard-implement-issue/1.0.0/SKILL.md' ]]"
+assert_success "archived SKILL.md carries the released version for onboard-implement-issue" \
+  bash -c "grep -q '^version: 1.0.0\$' '$STORE_Q/onboard-implement-issue/1.0.0/SKILL.md'"
+assert_success "scoped git tag was created locally for onboard-implement-issue" \
+  git -C "$CLONE_Q" rev-parse -q --verify refs/tags/onboard-implement-issue/v1.0.0
+assert_success "scoped git tag was pushed to origin for onboard-implement-issue" \
+  bash -c "git -C '$BARE_Q' tag | grep -qx 'onboard-implement-issue/v1.0.0'"
+
 # NOTE: a test asserting "a failed archive leaves no DEST behind" (the new
 # staging+mv behavior from the release.sh fix) was deliberately NOT added
 # here. Forcing `git archive | tar` itself to fail requires either corrupting
@@ -285,3 +307,4 @@ assert_failure "--dry-run (tag conflict) creates no release directory" \
 
 echo "release.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
+

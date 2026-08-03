@@ -45,7 +45,7 @@ a mutable checkout: a project's `.claude/skills/<skill>` symlink stays on a
 specific frozen release until something explicitly re-points it, rather than
 source, release, and consumption sharing a single collapsed role.
 
-Versioned skills (currently: `implement-issue`) split that single collapsed
+Versioned skills (currently: `implement-issue` and `onboard-implement-issue`) split that single collapsed
 role into three:
 
 1. **SOURCE** (mutable, where you develop) —
@@ -59,9 +59,10 @@ role into three:
    `git archive` (so it only ever contains committed content, never
    uncommitted working-tree state) and then made read-only (`chmod -R a-w`).
 3. **CONSUMERS** (symlinks that pin a version — never point at the repo) —
-   e.g. `~/.claude/skills/<skill> -> ~/.agents/releases/<skill>/<version>/`
-   (the global default), or `<project>/.claude/skills/<skill> -> ...` (a
-   per-project pin). Claude Code resolves a project's own `.claude/skills/`
+   e.g. `~/.claude/skills/<skill> -> ~/.agents/releases/<skill>/<version>/` for
+   Claude Code or `~/.gemini/config/skills/<skill> -> ~/.agents/releases/<skill>/<version>/`
+   for Antigravity/Gemini (the global defaults), or `<project>/.claude/skills/<skill> -> ...`
+   (a per-project pin). Claude Code resolves a project's own `.claude/skills/`
    before the global `~/.claude/skills/`, so a project pins simply by having
    its own symlink into the release store.
 
@@ -78,8 +79,9 @@ curl-one-liner bootstrap; getting the release tool *is* cloning the repo:
 ```
 git clone <this-repo-url>
 cd agentic-engineering
-./release.sh              # release the version currently on origin's default branch
-./release.sh --dry-run     # show what would happen without doing it
+./release.sh                                      # release implement-issue (default)
+SKILL_NAME=onboard-implement-issue ./release.sh  # release onboard-implement-issue
+./release.sh --dry-run                             # show what would happen without doing it
 ```
 
 `release.sh` never releases from a local working tree or local `HEAD`. The
@@ -101,7 +103,7 @@ dirty, in the clone that's running the script. Concretely, it:
 5. `git archive`s the skill subtree at that tag into the release store, then
    `chmod -R a-w`s it.
 
-It defaults to skill `implement-issue`, the clone it's run from as
+It defaults to skill `implement-issue` (or set `SKILL_NAME=onboard-implement-issue`), the clone it's run from as
 `REPO_ROOT`, remote `origin` as `ORIGIN`, and `~/.agents/releases` as
 `RELEASE_STORE` — all overridable via env vars (plus `DEFAULT_BRANCH`, which
 otherwise auto-detects from `ORIGIN`). That's how
@@ -131,7 +133,7 @@ mkdir -p <project>/.implement-issue
 echo <version> > <project>/.implement-issue/skill-version
 ```
 
-The symlink is what Claude Code actually resolves; the
+The symlink is what Claude Code actually resolves (or `~/.gemini/config/skills/<skill>` for global Antigravity/Gemini installation); the
 `.implement-issue/skill-version` file is just a greppable record of which
 version that is, for humans and scripts that want to check it without
 `readlink`.
@@ -145,12 +147,6 @@ Also manual for now (no `migrate.sh`):
    notes in order.
 2. Re-point the project's symlink: `ln -sfn ~/.agents/releases/<skill>/<new-version> <project>/.claude/skills/<skill>`.
 3. Update `<project>/.implement-issue/skill-version` to match.
-
-### Not yet versioned
-
-Only `implement-issue` carries a `version:` field today. `onboard-implement-issue`
-is still consumed the old way (symlinked straight from `skills/`) until it
-opts in the same way.
 
 ## Requirements
 

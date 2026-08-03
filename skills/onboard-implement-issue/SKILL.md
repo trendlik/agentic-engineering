@@ -1,6 +1,7 @@
 ---
 name: onboard-implement-issue
 description: An interactive, checkpoint-driven skill to onboard a target repository onto implement-issue. Drives per-repo setup (doctor check, LEARNINGS.md seeding, branch conventions, permission allowlist sync, CI gate enforcement, outcome backfill) using ONBOARDING.md as source of truth. Use when the user says "onboard a repo onto implement-issue", "make this repo compatible with implement-issue", or "/onboard-implement-issue".
+version: 1.0.0
 ---
 
 # onboard-implement-issue
