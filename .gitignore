@@ -2,3 +2,12 @@
 
 # Agent worktrees are ephemeral, per-run checkouts — never track them.
 .claude/worktrees/
+
+# Per-project version pins: absolute, machine-specific symlinks into the
+# release store (~/.agents/releases/<skill>/<version>/), one per adapter
+# (.claude/skills/ for Claude Code, .agents/skills/ for Antigravity).
+# Committing them would ship a link that dangles in every other clone and in
+# CI — same rationale as settings.local.json. The committed, greppable
+# record of which version a project pins is .implement-issue/skill-version.
+.claude/skills/
+.agents/skills/

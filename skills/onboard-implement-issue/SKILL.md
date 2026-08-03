@@ -1,7 +1,7 @@
 ---
 name: onboard-implement-issue
 description: An interactive, checkpoint-driven skill to onboard a target repository onto implement-issue. Drives per-repo setup (doctor check, LEARNINGS.md seeding, branch conventions, permission allowlist sync, CI gate enforcement, outcome backfill) using ONBOARDING.md as source of truth. Use when the user says "onboard a repo onto implement-issue", "make this repo compatible with implement-issue", or "/onboard-implement-issue".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # onboard-implement-issue
@@ -18,13 +18,25 @@ Run once per repository, from the root directory of the target repository you wi
 
 ## Setup: resolve `$SKILL_DIR` and target repository root
 
-Before executing the onboarding flow, resolve the `implement-issue` skill directory. This candidate loop ensures compatibility across platform adapters (Claude Code and Google Antigravity):
+Before executing the onboarding flow, resolve the `implement-issue` skill directory. This candidate loop ensures compatibility across platform adapters (Claude Code and Google Antigravity), and checks each adapter's project-scoped pin before its global default — a project can pin a specific released version of the skill via its own `<project>/.claude/skills/implement-issue` (Claude Code) or `<project>/.agents/skills/implement-issue` (Antigravity) symlink, and each adapter resolves its project-scoped location before its global one:
 
 ```bash
-for candidate in ~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue; do
+_repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+_candidates=()
+[[ -n "$_repo_root" ]] && _candidates+=(
+  "$_repo_root/.claude/skills/implement-issue"
+  "$_repo_root/.agents/skills/implement-issue"
+)
+_candidates+=(~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue)
+for candidate in "${_candidates[@]}"; do
   [[ -d "$candidate/scripts" ]] && SKILL_DIR="$candidate" && break
 done
 ```
+
+Outside a git repo, `_repo_root` is empty and the project candidates are
+skipped, degrading cleanly to the global fallback. Bash follows a symlinked
+directory transparently, so no `readlink`/`realpath` gymnastics are needed
+(those differ between BSD and GNU userlands anyway).
 
 Verify that `$SKILL_DIR` was successfully resolved and that `$SKILL_DIR/ONBOARDING.md`, `$SKILL_DIR/scripts/`, and `$SKILL_DIR/templates/` exist and are readable. If `$SKILL_DIR` cannot be found or required assets are missing, display a clear error message explaining that `implement-issue` must be installed first (referencing the installation instructions in `ONBOARDING.md`), and **stop immediately**.
 

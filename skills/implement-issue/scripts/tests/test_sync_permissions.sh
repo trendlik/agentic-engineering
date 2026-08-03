@@ -63,5 +63,50 @@ injected=$(jq -r '.permissions.allow[]' "$sf" | grep -c '^Bash(evil-injected:\*)
 assert_eq "$injected" "0" "crafted path does not inject a standalone allow rule"
 rm -f "$sf"
 
+# --- resolves SKILL_DIR to a project pin when no override is given -------
+# Without a SKILL_DIR override, the script must resolve it itself the same
+# way SKILL.md does: project .claude/skills/<skill> before any global path.
+proj_repo=$(mktemp -d)
+mkdir -p "$proj_repo/.claude/skills/implement-issue/scripts"
+sf=$(mktemp); rm -f "$sf"
+( unset SKILL_DIR; REPO_ROOT="$proj_repo" SETTINGS_FILE="$sf" "$SYNC" >/dev/null 2>&1 )
+assert_success "settings file created from a resolved project pin" bash -c "[[ -f '$sf' ]]"
+assert_success "resolved SKILL_DIR is the PROJECT path, not a global one" \
+  bash -c "jq -e '.permissions.allow | index(\"Bash($proj_repo/.claude/skills/implement-issue/scripts/state.sh:*)\")' '$sf'"
+rm -f "$sf"
+rm -rf "$proj_repo"
+
+# --- explicit SKILL_DIR override wins even over a project pin ------------
+# Resolution isn't even consulted when SKILL_DIR is already set: prove this
+# with a repo that DOES have a resolvable project pin, and confirm the
+# explicit override path is the one that lands in the settings file, not
+# the project pin.
+proj_repo2=$(mktemp -d)
+mkdir -p "$proj_repo2/.claude/skills/implement-issue/scripts"
+override_skill=$(mktemp -d)
+sf=$(mktemp); rm -f "$sf"
+( REPO_ROOT="$proj_repo2" SKILL_DIR="$override_skill" SETTINGS_FILE="$sf" "$SYNC" >/dev/null 2>&1 )
+assert_success "explicit SKILL_DIR override rule is present" \
+  bash -c "jq -e '.permissions.allow | index(\"Bash($override_skill/scripts/state.sh:*)\")' '$sf'"
+assert_failure "the resolvable project pin is NOT used when SKILL_DIR is explicitly set" \
+  bash -c "jq -e '.permissions.allow | index(\"Bash($proj_repo2/.claude/skills/implement-issue/scripts/state.sh:*)\")' '$sf'"
+rm -f "$sf"
+rm -rf "$proj_repo2" "$override_skill"
+
+# --- no project/global pin resolves -> falls back to the script's own dir
+# When resolve_skill_dir finds nothing (no project pin, no global pin under
+# an empty HOME), sync-permissions.sh must fall back to $DIR/.. -- its own
+# checkout -- rather than leaving SKILL_DIR empty or erroring out.
+empty_repo=$(mktemp -d)
+empty_home=$(mktemp -d)
+sf=$(mktemp); rm -f "$sf"
+( unset SKILL_DIR; REPO_ROOT="$empty_repo" HOME="$empty_home" SETTINGS_FILE="$sf" "$SYNC" >/dev/null 2>&1 )
+fallback_dir="$(cd "$SCRIPTS_DIR/.." && pwd)"
+assert_success "settings file created via the own-checkout fallback" bash -c "[[ -f '$sf' ]]"
+assert_success "no resolvable candidate -> falls back to the script's own skill dir" \
+  bash -c "jq -e '.permissions.allow | index(\"Bash($fallback_dir/scripts/state.sh:*)\")' '$sf'"
+rm -f "$sf"
+rm -rf "$empty_repo" "$empty_home"
+
 echo "sync-permissions.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

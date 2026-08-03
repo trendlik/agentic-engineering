@@ -9,30 +9,73 @@ target project or the local toolchain.
 
 ## Install the skill
 
-The skill is made available globally by symlinking it into your agent's skills
-directory. Clone the [`agentic-engineering`](../../) repo anywhere, then `cd` into
-it — the commands below run from the repo root, where `$PWD` resolves the absolute
-path the symlink needs, wherever you cloned it.
+The skill is versioned and released as an immutable snapshot — see
+[README.md's "Versioned releases"](../../README.md#versioned-releases) for
+the full SOURCE → release store → consumer model. Install from the release
+store, not the mutable checkout: symlinking straight at `skills/implement-issue`
+in a clone would point your global install at whatever's currently being
+edited in that clone, including uncommitted or unreleased changes.
+
+Which of the two sections below applies depends on whether the version you
+want already exists in `~/.agents/releases/implement-issue/`.
+
+### If you have push access to the skill repo (maintainer): cut a release
+
+Clone the repo anywhere, then cut a release from it:
 
 ```bash
 git clone <remote-url> agentic-engineering
 cd agentic-engineering
+./release.sh
 ```
+
+`release.sh` reads `version:` from `SKILL.md` **as committed on `origin`**,
+tags it, and archives it into `~/.agents/releases/implement-issue/<version>/`
+— read-only, and independent of whatever this clone has checked out locally.
+It prints the resolved `<version>`; use that below.
+
+This requires push access to the skill repo's `origin`: the script pushes
+the release tag (`git push "$ORIGIN" "$TAG"`) as part of cutting the
+release, and fails if you can't. It's also not a repair or reinstall path —
+if `~/.agents/releases/implement-issue/<version>/` already exists, `release.sh`
+refuses to overwrite it (releases are immutable); bump `version:` in
+`SKILL.md` and release again instead.
+
+### If a version has already been released (consumer): symlink it
+
+If `~/.agents/releases/implement-issue/<version>/` already exists **on this
+machine** (you or a teammate cut the release here, or you're adding a second
+adapter — or a project pin — to a version you already have), you don't need
+to clone or run anything — just point an adapter's global skills directory
+at the existing release store entry:
 
 **For Claude Code:**
 ```bash
-ln -s "$PWD/skills/implement-issue" ~/.claude/skills/implement-issue
+mkdir -p ~/.claude/skills
+ln -s ~/.agents/releases/implement-issue/<version> ~/.claude/skills/implement-issue
 ```
 
 **For Google Antigravity (Gemini):**
 ```bash
 mkdir -p ~/.gemini/config/skills
-ln -s "$PWD/skills/implement-issue" ~/.gemini/config/skills/implement-issue
+ln -s ~/.agents/releases/implement-issue/<version> ~/.gemini/config/skills/implement-issue
 ```
 
-The symlink keeps the skill available across all projects while the real files
-stay versioned in the repo. To install every skill in the repo at once, loop over
-`skills/*/` and symlink each into the same target directory.
+The release store is per-machine: `release.sh` only ever writes into your own
+`$HOME`, so a release someone else cut never shows up here on its own.
+Obtaining a version you did not release yourself currently requires push
+access to cut it locally — see the maintainer section above.
+
+The symlink keeps the skill available across all projects while the release
+store snapshot stays immutable. To install every skill in the repo at once,
+repeat the release step (if you have push access) and the symlink step per
+skill.
+
+Want a specific *project* pinned to a version instead of (or in addition to)
+this global default — e.g. so upgrading the global install doesn't move
+projects that need to stay put? See README's
+["Pin a project to a version"](../../README.md#pin-a-project-to-a-version)
+recipe, which writes both adapters' project-scoped symlinks.
 
 > **Windows:** these commands and the skill's `*.sh` scripts assume a Unix-style
 > shell (`bash`, `git`, `gh`, `jq`) and won't run under native `cmd`/PowerShell.

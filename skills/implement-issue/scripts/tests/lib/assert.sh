@@ -27,6 +27,15 @@ assert_eq() {
   fi
 }
 
+assert_ne() {
+  local actual=$1 not_expected=$2 desc=$3
+  if [[ "$actual" != "$not_expected" ]]; then
+    _report 0 "$desc"
+  else
+    _report 1 "$desc (both equal '$actual', expected them to differ)"
+  fi
+}
+
 assert_success() {
   local desc=$1; shift
   if "$@" >/dev/null 2>&1; then

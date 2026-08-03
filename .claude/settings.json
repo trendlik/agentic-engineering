@@ -8,7 +8,8 @@
       "Read(//opt/homebrew/bin/**)",
       "Bash(/bin/bash --version)",
       "Edit(~/.claude/skills/implement-issue/**)",
-      "Bash(bash skills/implement-issue/scripts/tests/run-tests.sh)"
+      "Bash(bash skills/implement-issue/scripts/tests/run-tests.sh)",
+      "Read(~/.claude/skills/implement-issue/**)"
     ]
   }
 }

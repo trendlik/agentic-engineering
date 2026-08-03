@@ -35,6 +35,11 @@ skill no longer has — verify before trusting it.
   authoritative source explicitly in the plan, and decide tag/push side effects (does the
   tool push the tag, or only build the snapshot?) up front rather than during
   implementation. (issue #31, 2026-08-02, skill@a9492e4)
+- When a change alters how the tooling resolves its own location (symlink layout, candidate
+  order, release-store pins), the plan must sequence the out-of-repo re-point **before**
+  merge, not as a post-merge follow-up — otherwise the first run after merge resolves into
+  the mutable SOURCE it is editing. State it as a pre-merge checklist item in the PR body.
+  (issue #37, 2026-08-03, skill@v1.0.0)
 
 ## Build & test (Phase 4)
 
@@ -64,6 +69,21 @@ skill no longer has — verify before trusting it.
   temp dir and `mv` into place on success, with trap/cleanup on failure — so a
   mid-operation failure never leaves a partial artifact (especially one that a later
   immutability/exists guard would then refuse to overwrite). (issue #31, 2026-08-02, skill@a9492e4)
+- `.claude/settings.json` is **committed** in this repo, and Claude Code writes approved
+  Bash/Read rules into it — so absolute machine-specific paths (`/Users/<name>/…`) and
+  version-pinned release-store paths accrete there silently, including from permission
+  prompts nobody edited by hand. Any diff touching it must use `~`-relative forms and carry
+  no pin version; per-machine rules belong in the gitignored `.claude/settings.local.json`.
+  Check with `git grep -n '/Users/'`. (issue #37, 2026-08-03, skill@v1.0.0)
+- A drift/consistency test that compares prose to code must assert the block's **semantics**
+  (loop termination, guards, predicates), not just the ordering of extracted values, and each
+  assertion must be mutation-tested on a **copy**: delete the construct and confirm that
+  assertion — and only it — fails. (issue #37, 2026-08-03, skill@v1.0.0)
+- Any doc claim about what `release.sh` does or requires must be verified against `release.sh`
+  itself. Two facts that are easy to get wrong: the tag push is **unconditional** (so every
+  path needs push access, even tag reuse), and the release store is **per-machine**
+  (`$HOME/.agents/releases`), so another person's release never appears in your `$HOME`.
+  (issue #37, 2026-08-03, skill@v1.0.0)
 
 ## CI quirks (Phase 7)
 
