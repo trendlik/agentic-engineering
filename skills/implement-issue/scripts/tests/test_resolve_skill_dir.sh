@@ -88,6 +88,30 @@ mkfixture "$home6/.claude/skills/implement-issue"
 assert_eq "$(resolve "$repo6" "$home6")" "$home6/.claude/skills/implement-issue" \
   "a candidate directory without a scripts/ subdir is skipped, not selected"
 
+# --- case 7: no candidate qualifies anywhere -> non-zero return, no output
+repo7="$WORK/repo7"; home7="$WORK/home7"
+mkdir -p "$repo7" "$home7"   # neither project nor global candidates exist
+out7=$(resolve "$repo7" "$home7"); rc7=$?
+assert_eq "$rc7" "1" "resolve_skill_dir returns non-zero when no candidate has a scripts/ subdir"
+assert_eq "$out7" "" "resolve_skill_dir prints nothing when no candidate qualifies"
+
+# --- case 8: repo root AND home containing spaces are handled correctly --
+# The candidate list is built as a bash array (not a word-split string), and
+# resolve_skill_dir reads it via `read`, not word-splitting -- this is the
+# whole reason the array form was chosen over a plain string loop. Prove
+# both functions actually cope with spaces rather than silently truncating
+# at the first word.
+repo8="$WORK/repo with spaces"; home8="$WORK/home with spaces"
+mkfixture "$repo8/.agents/skills/implement-issue"
+mkfixture "$home8/.claude/skills/implement-issue"
+assert_eq "$(resolve "$repo8" "$home8")" "$repo8/.agents/skills/implement-issue" \
+  "repo root and HOME containing spaces still resolve to the correct project pin"
+cand8=$(candidates "$repo8" "$home8")
+assert_eq "$(printf '%s\n' "$cand8" | wc -l | tr -d ' ')" "4" \
+  "candidate list for space-containing paths still has exactly 4 entries (no word-splitting)"
+assert_eq "$(printf '%s\n' "$cand8" | sed -n '2p')" "$repo8/.agents/skills/implement-issue" \
+  "the space-containing project .agents candidate is preserved as a single, intact entry"
+
 # --- drift guard: canonical lib vs. both prose loops ----------------------
 # Extracts the resolution block from each source, then normalizes it to an
 # ordered token sequence of the four known candidate shapes so reformatting
@@ -131,6 +155,91 @@ assert_eq "$seq_main" "$seq_lib" \
   "implement-issue/SKILL.md prose loop has not drifted from the canonical lib"
 assert_eq "$seq_onboard" "$seq_lib" \
   "onboard-implement-issue/SKILL.md prose loop has not drifted from the canonical lib"
+
+# --- is the drift guard actually load-bearing? ----------------------------
+# The five assert_eq calls above only prove the guard passes on today's
+# (non-drifted) files. Prove it also FAILS on drifted ones by running the
+# same extract+normalize pipeline against synthetic fixtures that reorder,
+# truncate, or reformat the loop -- a regression that weakens the pipeline
+# to "always matches" would still pass every assertion above.
+
+assert_ne() { # assert_ne <actual> <not-expected> <desc>
+  local actual=$1 not_expected=$2 desc=$3
+  if [[ "$actual" != "$not_expected" ]]; then
+    _report 0 "$desc"
+  else
+    _report 1 "$desc (both equal '$actual', expected them to differ)"
+  fi
+}
+
+reordered_fixture="$WORK/reordered.md"
+cat >"$reordered_fixture" <<'EOF'
+_repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+_candidates=()
+[[ -n "$_repo_root" ]] && _candidates+=(
+  "$_repo_root/.agents/skills/implement-issue"
+  "$_repo_root/.claude/skills/implement-issue"
+)
+_candidates+=(~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue)
+for candidate in "${_candidates[@]}"; do
+  [[ -d "$candidate/scripts" ]] && SKILL_DIR="$candidate" && break
+done
+EOF
+reordered_seq=$(extract_block_skillmd "$reordered_fixture" | normalize_block)
+assert_ne "$reordered_seq" "$expected_seq" \
+  "drift guard catches a candidate loop with .claude/.agents swapped (reordered)"
+
+truncated_fixture="$WORK/truncated.md"
+cat >"$truncated_fixture" <<'EOF'
+_repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+_candidates=()
+[[ -n "$_repo_root" ]] && _candidates+=(
+  "$_repo_root/.claude/skills/implement-issue"
+)
+_candidates+=(~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue)
+for candidate in "${_candidates[@]}"; do
+  [[ -d "$candidate/scripts" ]] && SKILL_DIR="$candidate" && break
+done
+EOF
+truncated_seq=$(extract_block_skillmd "$truncated_fixture" | normalize_block)
+assert_ne "$truncated_seq" "$expected_seq" \
+  "drift guard catches a candidate loop with the .agents candidate removed (truncated)"
+
+reformatted_fixture="$WORK/reformatted.md"
+cat >"$reformatted_fixture" <<'EOF'
+_repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+_candidates=()
+[[    -n    "$_repo_root"    ]]   &&   _candidates+=(
+    "$_repo_root/.claude/skills/implement-issue"
+
+    "$_repo_root/.agents/skills/implement-issue"
+)
+_candidates+=(~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue)
+for candidate in "${_candidates[@]}"; do
+    [[ -d "$candidate/scripts" ]] && SKILL_DIR="$candidate" && break
+done
+EOF
+reformatted_seq=$(extract_block_skillmd "$reformatted_fixture" | normalize_block)
+assert_eq "$reformatted_seq" "$expected_seq" \
+  "drift guard tolerates pure whitespace reformatting of an otherwise-correct loop"
+
+# --- false-positive guard: zero-match extraction must not silently pass --
+# If the entire loop were deleted from a prose file, extract+normalize
+# collapses to the empty string. Confirm that empty result is never
+# mistaken for a correct sequence: it must differ from the (hardcoded,
+# file-independent) expected_seq, not merely from whatever the lib
+# currently contains -- otherwise a simultaneous deletion in both places
+# would make "" == "" pass silently.
+deleted_loop_fixture="$WORK/deleted-loop.md"
+cat >"$deleted_loop_fixture" <<'EOF'
+Some unrelated prose that mentions skills and paths but has no candidate
+loop at all -- e.g. because it was deleted outright.
+EOF
+deleted_seq=$(extract_block_skillmd "$deleted_loop_fixture" | normalize_block)
+assert_eq "$deleted_seq" "" \
+  "a file with no candidate loop at all normalizes to the empty sequence"
+assert_ne "$deleted_seq" "$expected_seq" \
+  "a zero-match extraction never equals the canonical sequence (no silent pass on a deleted loop)"
 
 echo "resolve-skill-dir.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
