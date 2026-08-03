@@ -149,14 +149,15 @@ ln -s ~/.agents/releases/<skill>/<version> <project>/.claude/skills/<skill>
 ln -s ~/.agents/releases/<skill>/<version> <project>/.agents/skills/<skill>
 mkdir -p <project>/.implement-issue
 echo <version> > <project>/.implement-issue/skill-version
+printf '.claude/skills/\n.agents/skills/\n' >> <project>/.gitignore
 ```
 
-Both `.claude/skills/` and `.agents/skills/` are gitignored (see
-`.gitignore`) — each pin is an absolute, machine-specific path into the
-release store, so committing it would ship a link that dangles in every
-other clone and in CI, the same reasoning as `settings.local.json`. The two
-symlinks are the sole resolution input (per-machine, uncommitted); the
-committed `.implement-issue/skill-version` is just a greppable record of
+Add `.claude/skills/` and `.agents/skills/` to the *project's own*
+`.gitignore` (as above) — each pin is an absolute, machine-specific path
+into the release store, so committing it would ship a link that dangles in
+every other clone and in CI, the same reasoning as `settings.local.json`.
+The two symlinks are the sole resolution input (per-machine, uncommitted);
+the committed `.implement-issue/skill-version` is just a greppable record of
 which version that is, for humans and scripts that want to check it without
 `readlink` — no resolution path reads it.
 

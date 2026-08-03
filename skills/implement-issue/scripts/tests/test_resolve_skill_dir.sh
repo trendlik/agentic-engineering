@@ -139,22 +139,59 @@ normalize_block() { # normalize_block <<< block-text -- ordered token sequence o
       done
 }
 
-seq_lib=$(extract_block_lib "$SCRIPTS_DIR/lib/resolve-skill-dir.sh" | normalize_block)
-seq_main=$(extract_block_skillmd "$REPO_ROOT_REAL/skills/implement-issue/SKILL.md" | normalize_block)
-seq_onboard=$(extract_block_skillmd "$REPO_ROOT_REAL/skills/onboard-implement-issue/SKILL.md" | normalize_block)
-
 expected_seq=$'project-claude\nproject-agents\nglobal-claude\nglobal-gemini'
 
-assert_eq "$seq_lib" "$expected_seq" \
-  "lib/resolve-skill-dir.sh candidate order is project-claude, project-agents, global-claude, global-gemini"
-assert_eq "$seq_main" "$expected_seq" \
-  "implement-issue/SKILL.md prose loop order matches the canonical lib"
-assert_eq "$seq_onboard" "$expected_seq" \
-  "onboard-implement-issue/SKILL.md prose loop order matches the canonical lib"
-assert_eq "$seq_main" "$seq_lib" \
-  "implement-issue/SKILL.md prose loop has not drifted from the canonical lib"
-assert_eq "$seq_onboard" "$seq_lib" \
-  "onboard-implement-issue/SKILL.md prose loop has not drifted from the canonical lib"
+# REPO_ROOT_REAL only resolves to the full source repo from a source
+# checkout. Run from an installed release (e.g.
+# ~/.agents/releases/implement-issue/<version>/scripts/tests/run-tests.sh),
+# it resolves to the release store instead, and neither SKILL.md below is
+# reachable there -- onboard-implement-issue is a different skill, not part
+# of implement-issue's release archive at all, and even implement-issue's
+# own SKILL.md sits at a different relative depth once installed. Guard on
+# both actually existing so a missing file skips the block with a named
+# reason instead of silently normalizing to "" and failing every assertion
+# with a misleading empty-string diff.
+SKILLMD_MAIN="$REPO_ROOT_REAL/skills/implement-issue/SKILL.md"
+SKILLMD_ONBOARD="$REPO_ROOT_REAL/skills/onboard-implement-issue/SKILL.md"
+
+if [[ -f "$SKILLMD_MAIN" && -f "$SKILLMD_ONBOARD" ]]; then
+  block_main=$(extract_block_skillmd "$SKILLMD_MAIN")
+  block_onboard=$(extract_block_skillmd "$SKILLMD_ONBOARD")
+  seq_lib=$(extract_block_lib "$SCRIPTS_DIR/lib/resolve-skill-dir.sh" | normalize_block)
+  seq_main=$(printf '%s\n' "$block_main" | normalize_block)
+  seq_onboard=$(printf '%s\n' "$block_onboard" | normalize_block)
+
+  assert_eq "$seq_lib" "$expected_seq" \
+    "lib/resolve-skill-dir.sh candidate order is project-claude, project-agents, global-claude, global-gemini"
+  assert_eq "$seq_main" "$expected_seq" \
+    "implement-issue/SKILL.md prose loop order matches the canonical lib"
+  assert_eq "$seq_onboard" "$expected_seq" \
+    "onboard-implement-issue/SKILL.md prose loop order matches the canonical lib"
+  assert_eq "$seq_main" "$seq_lib" \
+    "implement-issue/SKILL.md prose loop has not drifted from the canonical lib"
+  assert_eq "$seq_onboard" "$seq_lib" \
+    "onboard-implement-issue/SKILL.md prose loop has not drifted from the canonical lib"
+
+  # normalize_block only extracts candidate *paths*, so it cannot notice a
+  # prose loop that keeps all four candidates in order but silently drops
+  # the not-a-repo guard or the scripts/ existence predicate around them --
+  # both of which change resolution behavior without touching the token
+  # sequence above. Cheap shape checks on the raw (un-normalized) block
+  # close that gap.
+  assert_success "implement-issue/SKILL.md prose loop keeps the not-a-repo guard ([[ -n \"\$_repo_root\" ]])" \
+    grep -qF -- '[[ -n "$_repo_root" ]]' <(printf '%s\n' "$block_main")
+  assert_success "implement-issue/SKILL.md prose loop keeps the scripts/ existence predicate (-d \"\$candidate/scripts\")" \
+    grep -qF -- '-d "$candidate/scripts"' <(printf '%s\n' "$block_main")
+  assert_success "onboard-implement-issue/SKILL.md prose loop keeps the not-a-repo guard ([[ -n \"\$_repo_root\" ]])" \
+    grep -qF -- '[[ -n "$_repo_root" ]]' <(printf '%s\n' "$block_onboard")
+  assert_success "onboard-implement-issue/SKILL.md prose loop keeps the scripts/ existence predicate (-d \"\$candidate/scripts\")" \
+    grep -qF -- '-d "$candidate/scripts"' <(printf '%s\n' "$block_onboard")
+else
+  missing="$SKILLMD_MAIN"
+  [[ -f "$SKILLMD_MAIN" ]] && missing="$SKILLMD_ONBOARD"
+  printf '  \033[0;33mskip\033[0m %s\n' \
+    "drift guard: not a source checkout (missing $missing)"
+fi
 
 # --- is the drift guard actually load-bearing? ----------------------------
 # The five assert_eq calls above only prove the guard passes on today's
@@ -162,15 +199,6 @@ assert_eq "$seq_onboard" "$seq_lib" \
 # same extract+normalize pipeline against synthetic fixtures that reorder,
 # truncate, or reformat the loop -- a regression that weakens the pipeline
 # to "always matches" would still pass every assertion above.
-
-assert_ne() { # assert_ne <actual> <not-expected> <desc>
-  local actual=$1 not_expected=$2 desc=$3
-  if [[ "$actual" != "$not_expected" ]]; then
-    _report 0 "$desc"
-  else
-    _report 1 "$desc (both equal '$actual', expected them to differ)"
-  fi
-}
 
 reordered_fixture="$WORK/reordered.md"
 cat >"$reordered_fixture" <<'EOF'

@@ -9,8 +9,7 @@
       "Bash(/bin/bash --version)",
       "Edit(~/.claude/skills/implement-issue/**)",
       "Bash(bash skills/implement-issue/scripts/tests/run-tests.sh)",
-      "Read(//Users/rendltom/.claude/skills/implement-issue/**)",
-      "Read(//Users/rendltom/.agents/releases/implement-issue/1.0.0/**)"
+      "Read(~/.claude/skills/implement-issue/**)"
     ]
   }
 }
