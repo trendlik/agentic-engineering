@@ -28,15 +28,15 @@ trap cleanup EXIT
 # frontmatter is "$2" (verbatim, so callers can also pass a missing/malformed
 # value -- an empty string omits the version: line entirely).
 setup_family() {
-  local family=$1 version_line=$2 extra_body=${3:-} clone
+  local family=$1 version_line=$2 extra_body=${3:-} skill_name=${4:-implement-issue} clone
   clone="$family/clone"
   mkdir -p "$family"
   git init -q --bare "$family/bare"
   git clone -q "$family/bare" "$clone" 2>/dev/null
   git -C "$clone" config user.email test@example.com
   git -C "$clone" config user.name "Test"
-  mkdir -p "$clone/skills/implement-issue"
-  write_skill_md "$clone" "$version_line" "$extra_body"
+  mkdir -p "$clone/skills/$skill_name"
+  write_skill_md "$clone" "$version_line" "$extra_body" "$skill_name"
   git -C "$clone" add -A
   git -C "$clone" commit -q -m "init"
   git -C "$clone" push -q origin HEAD
@@ -46,16 +46,16 @@ setup_family() {
 # heading -- used to plant a decoy "version:"-looking line in the PROSE BODY,
 # outside the frontmatter block, to prove release.sh never picks it up.
 write_skill_md() {
-  local clone=$1 version_line=$2 extra_body=${3:-}
+  local clone=$1 version_line=$2 extra_body=${3:-} skill_name=${4:-implement-issue}
   {
     echo "---"
-    echo "name: implement-issue"
+    echo "name: $skill_name"
     echo "description: test fixture"
     [[ -n "$version_line" ]] && echo "$version_line"
     echo "---"
-    echo "# implement-issue (test fixture)"
+    echo "# $skill_name (test fixture)"
     [[ -n "$extra_body" ]] && echo "$extra_body"
-  } > "$clone/skills/implement-issue/SKILL.md"
+  } > "$clone/skills/$skill_name/SKILL.md"
 }
 
 # Commits the clone's current skills/implement-issue/SKILL.md and pushes it
@@ -70,6 +70,11 @@ commit_and_push() {
 run_release() {
   local clone=$1 store=$2; shift 2
   env SKILL_NAME=implement-issue REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
+}
+
+run_release_skill() {
+  local skill=$1 clone=$2 store=$3; shift 3
+  env SKILL_NAME="$skill" REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
 }
 
 echo "release.sh"
@@ -274,6 +279,65 @@ assert_failure "--dry-run dies when tag exists but points at a different commit"
 assert_failure "--dry-run (tag conflict) creates no release directory" \
   bash -c "[[ -e '$STORE_P/implement-issue/9.0.0' ]]"
 
+# --- (q) releases onboard-implement-issue when SKILL_NAME=onboard-implement-issue ---
+FAM_Q="$WORK_DIR/fam-q"
+BARE_Q="$FAM_Q/bare"
+CLONE_Q="$FAM_Q/clone"
+STORE_Q="$WORK_DIR/store-q"
+setup_family "$FAM_Q" "version: 1.0.0" "" "onboard-implement-issue"
+assert_success "release onboard-implement-issue exits 0" \
+  run_release_skill "onboard-implement-issue" "$CLONE_Q" "$STORE_Q"
+assert_success "archived SKILL.md exists in the release dir for onboard-implement-issue" \
+  bash -c "[[ -f '$STORE_Q/onboard-implement-issue/1.0.0/SKILL.md' ]]"
+assert_success "archived SKILL.md carries the released version for onboard-implement-issue" \
+  bash -c "grep -q '^version: 1.0.0\$' '$STORE_Q/onboard-implement-issue/1.0.0/SKILL.md'"
+assert_success "scoped git tag was created locally for onboard-implement-issue" \
+  git -C "$CLONE_Q" rev-parse -q --verify refs/tags/onboard-implement-issue/v1.0.0
+assert_success "scoped git tag was pushed to origin for onboard-implement-issue" \
+  bash -c "git -C '$BARE_Q' tag | grep -qx 'onboard-implement-issue/v1.0.0'"
+assert_failure "refuses to overwrite an already-released version of onboard-implement-issue" \
+  run_release_skill "onboard-implement-issue" "$CLONE_Q" "$STORE_Q"
+
+# --- (r) --dry-run for onboard-implement-issue ---
+FAM_R="$WORK_DIR/fam-r"
+CLONE_R="$FAM_R/clone"
+STORE_R="$WORK_DIR/store-r"
+setup_family "$FAM_R" "version: 1.0.0" "" "onboard-implement-issue"
+assert_success "--dry-run for onboard-implement-issue exits 0" \
+  run_release_skill "onboard-implement-issue" "$CLONE_R" "$STORE_R" --dry-run
+assert_failure "--dry-run for onboard-implement-issue does not create release directory" \
+  bash -c "[[ -e '$STORE_R/onboard-implement-issue/1.0.0' ]]"
+assert_failure "--dry-run for onboard-implement-issue does not create git tag" \
+  git -C "$CLONE_R" rev-parse -q --verify refs/tags/onboard-implement-issue/v1.0.0
+
+# --- (s) dirty working tree release for onboard-implement-issue releases pushed version ---
+write_skill_md "$CLONE_Q" "version: 2.0.0" "" "onboard-implement-issue"
+commit_and_push "$CLONE_Q" "bump onboard-implement-issue to 2.0.0"
+write_skill_md "$CLONE_Q" "version: 9.9.9" "" "onboard-implement-issue"
+assert_success "release onboard-implement-issue succeeds while working tree is dirty" \
+  run_release_skill "onboard-implement-issue" "$CLONE_Q" "$STORE_Q"
+assert_success "the PUSHED version of onboard-implement-issue (2.0.0) was released" \
+  bash -c "[[ -f '$STORE_Q/onboard-implement-issue/2.0.0/SKILL.md' ]]"
+assert_failure "the DIRTY version of onboard-implement-issue (9.9.9) was NOT released" \
+  bash -c "[[ -e '$STORE_Q/onboard-implement-issue/9.9.9' ]]"
+git -C "$CLONE_Q" checkout -q -- skills/onboard-implement-issue/SKILL.md
+
+# --- (t) invalid SKILL_NAME rejected ---
+FAM_T="$WORK_DIR/fam-t"
+CLONE_T="$FAM_T/clone"
+STORE_T="$WORK_DIR/store-t"
+setup_family "$FAM_T" "version: 1.0.0"
+assert_failure "rejects SKILL_NAME containing path traversal ('..')" \
+  run_release_skill "../invalid" "$CLONE_T" "$STORE_T"
+assert_failure "rejects non-existent SKILL_NAME" \
+  run_release_skill "nonexistent-skill" "$CLONE_T" "$STORE_T"
+
+# --- (u) verify actual repository skill files have valid version frontmatter ---
+assert_success "skills/onboard-implement-issue/SKILL.md in repo has valid semver version" \
+  bash -c "grep -q '^version: [0-9]\+\.[0-9]\+\.[0-9]\+\$' '$ROOT_DIR/skills/onboard-implement-issue/SKILL.md'"
+assert_success "skills/implement-issue/SKILL.md in repo has valid semver version" \
+  bash -c "grep -q '^version: [0-9]\+\.[0-9]\+\.[0-9]\+\$' '$ROOT_DIR/skills/implement-issue/SKILL.md'"
+
 # NOTE: a test asserting "a failed archive leaves no DEST behind" (the new
 # staging+mv behavior from the release.sh fix) was deliberately NOT added
 # here. Forcing `git archive | tar` itself to fail requires either corrupting
@@ -285,3 +349,4 @@ assert_failure "--dry-run (tag conflict) creates no release directory" \
 
 echo "release.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
+

@@ -25,3 +25,14 @@ skill had no `version:` field, no git tags, and every consumer pointed
 straight at the mutable working tree in this repo.
 
 No breaking changes / no migration steps (first version).
+
+## onboard-implement-issue
+
+### [1.0.0]
+
+Initial versioned release. No prior version existed — before this, the
+skill had no `version:` field, no git tags, and every consumer pointed
+straight at the mutable working tree in this repo.
+
+No breaking changes / no migration steps (first version).
+
