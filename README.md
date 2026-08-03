@@ -64,12 +64,24 @@ role into three:
    for Antigravity/Gemini (the global defaults), or `<project>/.claude/skills/<skill> -> ...`
    (a per-project pin). Claude Code resolves a project's own `.claude/skills/`
    before the global `~/.claude/skills/`, so a project pins simply by having
-   its own symlink into the release store.
+   its own symlink into the release store. Antigravity gives the same
+   override semantics via `<project>/.agents/skills/<skill> -> ...` ahead of
+   the global `~/.gemini/config/skills/<skill>` — a per-project pin therefore
+   writes *both* symlinks (one per adapter) so scripts resolve the pinned
+   version regardless of which adapter is driving.
 
-**Dogfooding exception:** this repo has its own `.claude/skills/implement-issue`
-symlink pointing at `../../skills/implement-issue` — the mutable SOURCE, not a
-release snapshot. So when you're working *in this repo*, you run the live
-in-dev skill; every other project resolves the frozen release instead.
+**This repo is not special.** It pins a frozen release like any other
+project — there is no dogfooding exception. An earlier version of this repo
+had `.claude/skills/implement-issue` symlinked straight at
+`../../skills/implement-issue`, the mutable SOURCE, so that working *in this
+repo* ran the live in-dev skill. That's gone: with project-before-global
+resolution, a project's own `.claude/skills/`/`.agents/skills/` symlink
+always wins, so a SOURCE-pointing symlink here would mean a run inside this
+repo loads and executes the very files it is currently editing, mid-edit —
+exactly the bug this issue fixes for every *other* project, just self-inflicted.
+The accepted tradeoff: the dev loop for this repo becomes edit → commit/push →
+bump `version:` → `./release.sh` → re-pin (below) — an unreleased version is
+never run here before it ships, the same as any consumer.
 
 ### Cutting a release
 
@@ -124,19 +136,29 @@ yet is invisible to it.
 
 ### Pin a project to a version
 
-There's no `pin.sh` yet — pinning is two manual steps:
+There's no `pin.sh` yet — pinning is a few manual steps. Write **both**
+adapter symlinks (Claude Code's `.claude/skills/` and Antigravity's
+`.agents/skills/`) so a project's scripts resolve the pinned version
+regardless of which adapter runs it — a project pinned via only one of the
+two still runs the other adapter's *global* default, which is exactly the
+per-project-pin bug this issue fixes:
 
 ```
-mkdir -p <project>/.claude/skills
+mkdir -p <project>/.claude/skills <project>/.agents/skills
 ln -s ~/.agents/releases/<skill>/<version> <project>/.claude/skills/<skill>
+ln -s ~/.agents/releases/<skill>/<version> <project>/.agents/skills/<skill>
 mkdir -p <project>/.implement-issue
 echo <version> > <project>/.implement-issue/skill-version
 ```
 
-The symlink is what Claude Code actually resolves (or `~/.gemini/config/skills/<skill>` for global Antigravity/Gemini installation); the
-`.implement-issue/skill-version` file is just a greppable record of which
-version that is, for humans and scripts that want to check it without
-`readlink`.
+Both `.claude/skills/` and `.agents/skills/` are gitignored (see
+`.gitignore`) — each pin is an absolute, machine-specific path into the
+release store, so committing it would ship a link that dangles in every
+other clone and in CI, the same reasoning as `settings.local.json`. The two
+symlinks are the sole resolution input (per-machine, uncommitted); the
+committed `.implement-issue/skill-version` is just a greppable record of
+which version that is, for humans and scripts that want to check it without
+`readlink` — no resolution path reads it.
 
 ### Migrate a project to a new version
 
@@ -145,7 +167,11 @@ Also manual for now (no `migrate.sh`):
 1. Read [`CHANGELOG.md`](CHANGELOG.md) for every version between the
    project's current pin and the target version, and follow any **Migration**
    notes in order.
-2. Re-point the project's symlink: `ln -sfn ~/.agents/releases/<skill>/<new-version> <project>/.claude/skills/<skill>`.
+2. Re-point **both** of the project's symlinks:
+   ```
+   ln -sfn ~/.agents/releases/<skill>/<new-version> <project>/.claude/skills/<skill>
+   ln -sfn ~/.agents/releases/<skill>/<new-version> <project>/.agents/skills/<skill>
+   ```
 3. Update `<project>/.implement-issue/skill-version` to match.
 
 ## Requirements

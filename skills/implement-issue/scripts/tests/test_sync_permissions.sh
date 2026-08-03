@@ -63,5 +63,18 @@ injected=$(jq -r '.permissions.allow[]' "$sf" | grep -c '^Bash(evil-injected:\*)
 assert_eq "$injected" "0" "crafted path does not inject a standalone allow rule"
 rm -f "$sf"
 
+# --- resolves SKILL_DIR to a project pin when no override is given -------
+# Without a SKILL_DIR override, the script must resolve it itself the same
+# way SKILL.md does: project .claude/skills/<skill> before any global path.
+proj_repo=$(mktemp -d)
+mkdir -p "$proj_repo/.claude/skills/implement-issue/scripts"
+sf=$(mktemp); rm -f "$sf"
+( unset SKILL_DIR; REPO_ROOT="$proj_repo" SETTINGS_FILE="$sf" "$SYNC" >/dev/null 2>&1 )
+assert_success "settings file created from a resolved project pin" bash -c "[[ -f '$sf' ]]"
+assert_success "resolved SKILL_DIR is the PROJECT path, not a global one" \
+  bash -c "jq -e '.permissions.allow | index(\"Bash($proj_repo/.claude/skills/implement-issue/scripts/state.sh:*)\")' '$sf'"
+rm -f "$sf"
+rm -rf "$proj_repo"
+
 echo "sync-permissions.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

@@ -44,15 +44,19 @@ dry_run=0
 [[ -n "$REPO_ROOT" ]] || die "not inside a git repo (and REPO_ROOT not set)"
 
 # Resolve SKILL_DIR to the SAME path the coordinator uses at runtime, so the
-# script-path allow rules actually match. SKILL.md resolves it via the symlink
-# candidates (e.g. ~/.claude/skills/implement-issue), and bash keeps that
-# symlink path verbatim in the command string it runs — so a rule must use the
-# symlink path, not the physical checkout $DIR/.. resolves to. Mirror that
-# candidate loop here; fall back to this script's own dir only if none match.
+# script-path allow rules actually match. SKILL.md resolves it via the same
+# project-before-global candidate order (project .claude/skills/, project
+# .agents/skills/, global ~/.claude/skills/, global ~/.gemini/config/skills/),
+# and bash keeps that symlink path verbatim in the command string it runs —
+# so a rule must use the symlink path a pinned project actually resolves,
+# not the physical checkout $DIR/.. resolves to. Source the canonical
+# resolver (lib/resolve-skill-dir.sh) so this stays in lockstep with the
+# prose loops in SKILL.md; fall back to this script's own dir only if no
+# candidate matches.
 if [[ -z "${SKILL_DIR:-}" ]]; then
-  for candidate in ~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue; do
-    [[ -d "$candidate/scripts" ]] && SKILL_DIR="$candidate" && break
-  done
+  # shellcheck source=lib/resolve-skill-dir.sh
+  source "$DIR/lib/resolve-skill-dir.sh"
+  SKILL_DIR="$(resolve_skill_dir implement-issue || true)"
   : "${SKILL_DIR:=$(cd "$DIR/.." && pwd)}"
 fi
 : "${SETTINGS_FILE:=$REPO_ROOT/.claude/settings.local.json}"

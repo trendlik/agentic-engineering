@@ -1,7 +1,7 @@
 ---
 name: implement-issue
 description: A gated, approval-driven workflow that takes a GitHub issue to a merged PR through clarify → plan → implement → test → review → CI-watch → retrospective phases. The coordinator never edits code itself — implementation happens only in a plan-gated sub-agent (Phase 3). Use when the user says "implement issue #N", "/implement-issue N", or wants to work a GitHub issue through to a pull request.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # implement-issue
@@ -45,12 +45,31 @@ See [WORKFLOW.md](WORKFLOW.md) for full per-phase instructions.
 Before Phase 1, resolve the skill's own directory once — every script call in WORKFLOW.md uses `$SKILL_DIR`:
 
 ```bash
-for candidate in ~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue; do
+_repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+_candidates=()
+[[ -n "$_repo_root" ]] && _candidates+=(
+  "$_repo_root/.claude/skills/implement-issue"
+  "$_repo_root/.agents/skills/implement-issue"
+)
+_candidates+=(~/.claude/skills/implement-issue ~/.gemini/config/skills/implement-issue)
+for candidate in "${_candidates[@]}"; do
   [[ -d "$candidate/scripts" ]] && SKILL_DIR="$candidate" && break
 done
 ```
 
-This resolves correctly whether the skill is reached via the Claude Code or Antigravity symlink — bash follows a symlinked directory transparently, so no `readlink`/`realpath` gymnastics are needed (those differ between BSD and GNU userlands anyway).
+A project can pin a specific released version of the skill by placing its own
+symlink at `<project>/.claude/skills/implement-issue` (Claude Code) or
+`<project>/.agents/skills/implement-issue` (Antigravity) — each adapter
+resolves its project-scoped location before its global one, so the loop
+above checks both project paths first, then falls back to the global
+`~/.claude/skills/implement-issue` or `~/.gemini/config/skills/implement-issue`.
+Outside a git repo, `_repo_root` is empty and the project candidates are
+skipped, degrading cleanly to the global fallback. This resolves correctly
+whichever symlink the skill is reached via — bash follows a symlinked
+directory transparently, so no `readlink`/`realpath` gymnastics are needed
+(those differ between BSD and GNU userlands anyway, and would also break the
+verbatim symlink path that `sync-permissions.sh`'s allowlist rules must
+match).
 
 New machine? Run `$SKILL_DIR/scripts/doctor.sh` first — it verifies git/gh/jq are installed and authenticated and reports exactly what's missing.
 

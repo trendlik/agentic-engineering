@@ -18,6 +18,29 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.1.0]
+
+Adds per-project version pinning on Antigravity: `$SKILL_DIR` resolution (the
+inline loops in `SKILL.md` and the canonical `scripts/lib/resolve-skill-dir.sh`
+that `sync-permissions.sh` now sources) checks a project's own
+`.agents/skills/implement-issue` symlink alongside the existing
+`.claude/skills/implement-issue`, both ahead of the global
+`~/.claude/skills/implement-issue` / `~/.gemini/config/skills/implement-issue`
+defaults. Previously the candidate loops probed only the two global paths, so
+a project pinned to an older release still ran that release's *scripts* from
+whatever the global symlink happened to point at, even though its prose
+resolved the pinned version correctly.
+
+Not breaking — a project with no project-level symlink resolves exactly as
+before.
+
+**Migration:** projects that already pin a version via
+`<project>/.claude/skills/implement-issue` should additionally create the
+Antigravity symlink (`<project>/.agents/skills/implement-issue`, pointing at
+the same release-store version) and re-run `sync-permissions.sh` so its
+allowlist rules pick up the project path. See README.md's "Pin a project to a
+version" recipe.
+
 ### [1.0.0]
 
 Initial versioned release. No prior version existed — before this, the
@@ -27,6 +50,23 @@ straight at the mutable working tree in this repo.
 No breaking changes / no migration steps (first version).
 
 ## onboard-implement-issue
+
+### [1.1.0]
+
+Same `$SKILL_DIR` resolution fix as `implement-issue` 1.1.0: the inline
+candidate loop now checks a project's own `.claude/skills/implement-issue`
+and `.agents/skills/implement-issue` symlinks before falling back to the
+global `~/.claude/skills/implement-issue` / `~/.gemini/config/skills/implement-issue`
+defaults, so onboarding a repo that already pins a version resolves the
+pinned skill's own scripts, not whatever the global symlink points at.
+
+Not breaking — a project with no project-level symlink resolves exactly as
+before.
+
+**Migration:** already-pinned projects should add the `.agents/skills/`
+symlink (Antigravity) alongside their existing `.claude/skills/` one and
+re-run `sync-permissions.sh`. See README.md's "Pin a project to a version"
+recipe.
 
 ### [1.0.0]
 
