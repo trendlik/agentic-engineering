@@ -295,6 +295,48 @@ assert_success "scoped git tag was created locally for onboard-implement-issue" 
   git -C "$CLONE_Q" rev-parse -q --verify refs/tags/onboard-implement-issue/v1.0.0
 assert_success "scoped git tag was pushed to origin for onboard-implement-issue" \
   bash -c "git -C '$BARE_Q' tag | grep -qx 'onboard-implement-issue/v1.0.0'"
+assert_failure "refuses to overwrite an already-released version of onboard-implement-issue" \
+  run_release_skill "onboard-implement-issue" "$CLONE_Q" "$STORE_Q"
+
+# --- (r) --dry-run for onboard-implement-issue ---
+FAM_R="$WORK_DIR/fam-r"
+CLONE_R="$FAM_R/clone"
+STORE_R="$WORK_DIR/store-r"
+setup_family "$FAM_R" "version: 1.0.0" "" "onboard-implement-issue"
+assert_success "--dry-run for onboard-implement-issue exits 0" \
+  run_release_skill "onboard-implement-issue" "$CLONE_R" "$STORE_R" --dry-run
+assert_failure "--dry-run for onboard-implement-issue does not create release directory" \
+  bash -c "[[ -e '$STORE_R/onboard-implement-issue/1.0.0' ]]"
+assert_failure "--dry-run for onboard-implement-issue does not create git tag" \
+  git -C "$CLONE_R" rev-parse -q --verify refs/tags/onboard-implement-issue/v1.0.0
+
+# --- (s) dirty working tree release for onboard-implement-issue releases pushed version ---
+write_skill_md "$CLONE_Q" "version: 2.0.0" "" "onboard-implement-issue"
+commit_and_push "$CLONE_Q" "bump onboard-implement-issue to 2.0.0"
+write_skill_md "$CLONE_Q" "version: 9.9.9" "" "onboard-implement-issue"
+assert_success "release onboard-implement-issue succeeds while working tree is dirty" \
+  run_release_skill "onboard-implement-issue" "$CLONE_Q" "$STORE_Q"
+assert_success "the PUSHED version of onboard-implement-issue (2.0.0) was released" \
+  bash -c "[[ -f '$STORE_Q/onboard-implement-issue/2.0.0/SKILL.md' ]]"
+assert_failure "the DIRTY version of onboard-implement-issue (9.9.9) was NOT released" \
+  bash -c "[[ -e '$STORE_Q/onboard-implement-issue/9.9.9' ]]"
+git -C "$CLONE_Q" checkout -q -- skills/onboard-implement-issue/SKILL.md
+
+# --- (t) invalid SKILL_NAME rejected ---
+FAM_T="$WORK_DIR/fam-t"
+CLONE_T="$FAM_T/clone"
+STORE_T="$WORK_DIR/store-t"
+setup_family "$FAM_T" "version: 1.0.0"
+assert_failure "rejects SKILL_NAME containing path traversal ('..')" \
+  run_release_skill "../invalid" "$CLONE_T" "$STORE_T"
+assert_failure "rejects non-existent SKILL_NAME" \
+  run_release_skill "nonexistent-skill" "$CLONE_T" "$STORE_T"
+
+# --- (u) verify actual repository skill files have valid version frontmatter ---
+assert_success "skills/onboard-implement-issue/SKILL.md in repo has valid semver version" \
+  bash -c "grep -q '^version: [0-9]\+\.[0-9]\+\.[0-9]\+\$' '$ROOT_DIR/skills/onboard-implement-issue/SKILL.md'"
+assert_success "skills/implement-issue/SKILL.md in repo has valid semver version" \
+  bash -c "grep -q '^version: [0-9]\+\.[0-9]\+\.[0-9]\+\$' '$ROOT_DIR/skills/implement-issue/SKILL.md'"
 
 # NOTE: a test asserting "a failed archive leaves no DEST behind" (the new
 # staging+mv behavior from the release.sh fix) was deliberately NOT added
