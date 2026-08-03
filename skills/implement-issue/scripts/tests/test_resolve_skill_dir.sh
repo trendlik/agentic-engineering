@@ -186,6 +186,10 @@ if [[ -f "$SKILLMD_MAIN" && -f "$SKILLMD_ONBOARD" ]]; then
     grep -qF -- '[[ -n "$_repo_root" ]]' <(printf '%s\n' "$block_onboard")
   assert_success "onboard-implement-issue/SKILL.md prose loop keeps the scripts/ existence predicate (-d \"\$candidate/scripts\")" \
     grep -qF -- '-d "$candidate/scripts"' <(printf '%s\n' "$block_onboard")
+  assert_success "implement-issue/SKILL.md prose loop keeps first-match-wins (&& break)" \
+    grep -qF -- 'SKILL_DIR="$candidate" && break' <(printf '%s\n' "$block_main")
+  assert_success "onboard-implement-issue/SKILL.md prose loop keeps first-match-wins (&& break)" \
+    grep -qF -- 'SKILL_DIR="$candidate" && break' <(printf '%s\n' "$block_onboard")
 else
   missing="$SKILLMD_MAIN"
   [[ -f "$SKILLMD_MAIN" ]] && missing="$SKILLMD_ONBOARD"

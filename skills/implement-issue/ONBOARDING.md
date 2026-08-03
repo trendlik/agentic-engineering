@@ -43,9 +43,11 @@ refuses to overwrite it (releases are immutable); bump `version:` in
 
 ### If a version has already been released (consumer): symlink it
 
-If someone with push access has already released the version you want, you
-don't need to clone or run anything — just point an adapter's global skills
-directory at the existing release store entry:
+If `~/.agents/releases/implement-issue/<version>/` already exists **on this
+machine** (you or a teammate cut the release here, or you're adding a second
+adapter — or a project pin — to a version you already have), you don't need
+to clone or run anything — just point an adapter's global skills directory
+at the existing release store entry:
 
 **For Claude Code:**
 ```bash
@@ -58,6 +60,11 @@ ln -s ~/.agents/releases/implement-issue/<version> ~/.claude/skills/implement-is
 mkdir -p ~/.gemini/config/skills
 ln -s ~/.agents/releases/implement-issue/<version> ~/.gemini/config/skills/implement-issue
 ```
+
+The release store is per-machine: `release.sh` only ever writes into your own
+`$HOME`, so a release someone else cut never shows up here on its own.
+Obtaining a version you did not release yourself currently requires push
+access to cut it locally — see the maintainer section above.
 
 The symlink keeps the skill available across all projects while the release
 store snapshot stays immutable. To install every skill in the repo at once,
