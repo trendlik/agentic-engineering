@@ -18,6 +18,12 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.2.0]
+
+Fixes skill provenance (`skill_sha`) degradation to `skill@unknown` when `implement-issue` runs from an immutable release-store installation (which carries no `.git` directory). Centralizes resolution in `scripts/lib/common.sh` using a fallback sequence: git short SHA -> `v<version>` parsed from `SKILL.md` frontmatter -> `unknown`. Updates outcome ledger recording, backfill scripts, documentation, and template provenance stamps (`skill@<sha|vVersion>`).
+
+Not breaking — backward compatible with existing git checkouts and release store installations.
+
 ### [1.1.0]
 
 Adds per-project version pinning on Antigravity: `$SKILL_DIR` resolution (the
