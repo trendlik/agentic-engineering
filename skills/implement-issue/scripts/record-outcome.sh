@@ -11,7 +11,7 @@
 # Known keys (anything else is rejected):
 #   issue pr labels outcome plan_file_count files_changed diff_loc commits
 #   clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours
-#   skill_sha recorded_at
+#   skill_sha skill_version recorded_at
 #
 # - `issue` is also given positionally (first arg) and must be a
 #   non-negative integer.
@@ -21,8 +21,8 @@
 # - `outcome` must be one of: merged, closed, aborted.
 # - Any known key not supplied is written as JSON null.
 # - `recorded_at` defaults to today (`date +%F`); `skill_sha` defaults to
-#   this skill's short commit sha (or v<version> from SKILL.md frontmatter,
-#   or "unknown" if neither can be resolved).
+#   this skill's short commit sha (or "unknown"); `skill_version` defaults to
+#   the version in SKILL.md (or "unknown").
 # - UPSERT keyed on `issue`: replaces any existing line for the same issue
 #   number in place, never appends a duplicate.
 #
@@ -37,7 +37,7 @@ source "$DIR/lib/common.sh"
 require_cmd jq "brew install jq"
 
 INT_KEYS="issue pr plan_file_count files_changed diff_loc commits clarify_rounds plan_revisions review_loops ci_fixes"
-KNOWN_KEYS="issue title pr labels outcome plan_file_count files_changed diff_loc commits clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours skill_sha recorded_at"
+KNOWN_KEYS="issue title pr labels outcome plan_file_count files_changed diff_loc commits clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours skill_sha skill_version recorded_at"
 
 is_known_key() {
   local k=$1 x
@@ -105,7 +105,7 @@ for kv in "$@"; do
       jq_args+=(--argjson wall_clock_hours "$val")
       jq_set_fields="$jq_set_fields, wall_clock_hours: \$wall_clock_hours"
       ;;
-    skill_sha|recorded_at)
+    skill_sha|skill_version|recorded_at)
       jq_args+=(--arg "$key" "$val")
       jq_set_fields="$jq_set_fields, $key: \$$key"
       ;;
@@ -138,7 +138,7 @@ if [[ $labels_given -eq 1 ]]; then
   jq_set_fields="$jq_set_fields, labels: \$labels"
 fi
 
-# Auto-fill recorded_at and skill_sha unless explicitly passed.
+# Auto-fill recorded_at, skill_sha, and skill_version unless explicitly passed.
 if [[ "$jq_set_fields" != *'recorded_at:'* ]]; then
   recorded_at=$(date +%F)
   jq_args+=(--arg recorded_at "$recorded_at")
@@ -148,6 +148,11 @@ if [[ "$jq_set_fields" != *'skill_sha:'* ]]; then
   skill_sha=$(skill_sha_default "$DIR/..")
   jq_args+=(--arg skill_sha "$skill_sha")
   jq_set_fields="$jq_set_fields, skill_sha: \$skill_sha"
+fi
+if [[ "$jq_set_fields" != *'skill_version:'* ]]; then
+  skill_version=$(skill_version_default "$DIR/..")
+  jq_args+=(--arg skill_version "$skill_version")
+  jq_set_fields="$jq_set_fields, skill_version: \$skill_version"
 fi
 
 # Build the full record: every known key present (explicit or null), then
@@ -159,7 +164,7 @@ record=$(jq -nc "${jq_args[@]}" \
     issue: null, title: null, pr: null, labels: null, outcome: null,
     plan_file_count: null, files_changed: null, diff_loc: null, commits: null,
     clarify_rounds: null, plan_revisions: null, review_loops: null, ci_fixes: null,
-    wall_clock_hours: null, skill_sha: null, recorded_at: null
+    wall_clock_hours: null, skill_sha: null, skill_version: null, recorded_at: null
   } * {'"$jq_set_fields"'}') || die "failed to build JSON record"
 
 # UPSERT: replace any existing line for this issue, else append.

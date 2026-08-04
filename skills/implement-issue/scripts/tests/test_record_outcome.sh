@@ -83,22 +83,25 @@ assert_failure "negative count field (files_changed) is rejected" env OUTCOMES_F
 assert_success "wall_clock_hours accepts a float" env OUTCOMES_FILE="$ledger" "$RECORD" 20 wall_clock_hours=1.5
 rm -f "$ledger"
 
-# --- auto-fill: recorded_at / skill_sha ----------------------------------
+# --- auto-fill: recorded_at / skill_sha / skill_version -------------------
 ledger=$(mktemp)
 OUTCOMES_FILE="$ledger" "$RECORD" 30 title=AutoFill >/dev/null 2>&1
 rec=$(cat "$ledger")
 recorded_at=$(jq -r '.recorded_at' <<<"$rec")
 skill_sha=$(jq -r '.skill_sha' <<<"$rec")
+skill_version=$(jq -r '.skill_version' <<<"$rec")
 assert_failure "recorded_at is auto-filled (non-null) when omitted" bash -c "[[ '$recorded_at' == 'null' || -z '$recorded_at' ]]"
 assert_failure "skill_sha is auto-filled (non-null) when omitted" bash -c "[[ '$skill_sha' == 'null' || -z '$skill_sha' ]]"
+assert_failure "skill_version is auto-filled (non-null) when omitted" bash -c "[[ '$skill_version' == 'null' || -z '$skill_version' ]]"
 
-OUTCOMES_FILE="$ledger" "$RECORD" 31 recorded_at=2020-01-01 skill_sha=deadbee >/dev/null 2>&1
+OUTCOMES_FILE="$ledger" "$RECORD" 31 recorded_at=2020-01-01 skill_sha=deadbee skill_version=1.2.3 >/dev/null 2>&1
 rec31=$(grep '"issue":31' "$ledger")
 assert_eq "$(jq -r '.recorded_at' <<<"$rec31")" "2020-01-01" "explicit recorded_at is honored"
 assert_eq "$(jq -r '.skill_sha' <<<"$rec31")" "deadbee" "explicit skill_sha is honored"
+assert_eq "$(jq -r '.skill_version' <<<"$rec31")" "1.2.3" "explicit skill_version is honored"
 rm -f "$ledger"
 
-# --- skill_sha_default resolution order ----------------------------------
+# --- skill_sha_default / skill_version_default resolution order -----------
 tmp_sha_work=$(mktemp -d)
 
 # 1. git short sha available in git repo
@@ -115,7 +118,7 @@ expected_git_sha=$(git -C "$git_repo" rev-parse --short HEAD)
 assert_eq "$(skill_sha_default "$git_repo")" "$expected_git_sha" \
   "skill_sha_default returns git short SHA when git repo exists"
 
-# 2. git sha fails / not a git repo, but SKILL.md with version: X.Y.Z exists -> returns vX.Y.Z
+# 2. skill_version_default extracts version from SKILL.md when not a git repo; skill_sha_default returns unknown
 release_store="$tmp_sha_work/release_store"
 mkdir -p "$release_store"
 cat <<'EOF' > "$release_store/SKILL.md"
@@ -126,8 +129,10 @@ version: 1.0.0
 ---
 EOF
 
-assert_eq "$(skill_sha_default "$release_store")" "v1.0.0" \
-  "skill_sha_default falls back to v<version> from SKILL.md when not a git repo"
+assert_eq "$(skill_version_default "$release_store")" "1.0.0" \
+  "skill_version_default extracts version from SKILL.md"
+assert_eq "$(skill_sha_default "$release_store")" "unknown" \
+  "skill_sha_default returns 'unknown' when not a git repo"
 
 cat <<'EOF' > "$release_store/SKILL.md"
 ---
@@ -136,8 +141,8 @@ version: "2.3.4-beta"
 ---
 EOF
 
-assert_eq "$(skill_sha_default "$release_store")" "v2.3.4-beta" \
-  "skill_sha_default handles quoted version strings in SKILL.md"
+assert_eq "$(skill_version_default "$release_store")" "2.3.4-beta" \
+  "skill_version_default handles quoted version strings in SKILL.md"
 
 # 3. both git sha and SKILL.md version fail / missing -> returns unknown
 empty_store="$tmp_sha_work/empty_store"
@@ -145,6 +150,8 @@ mkdir -p "$empty_store"
 
 assert_eq "$(skill_sha_default "$empty_store")" "unknown" \
   "skill_sha_default returns 'unknown' when not a git repo and SKILL.md missing"
+assert_eq "$(skill_version_default "$empty_store")" "unknown" \
+  "skill_version_default returns 'unknown' when SKILL.md is missing"
 
 cat <<'EOF' > "$empty_store/SKILL.md"
 ---
@@ -155,8 +162,112 @@ EOF
 
 assert_eq "$(skill_sha_default "$empty_store")" "unknown" \
   "skill_sha_default returns 'unknown' when SKILL.md exists but has no version"
+assert_eq "$(skill_version_default "$empty_store")" "unknown" \
+  "skill_version_default returns 'unknown' when SKILL.md exists but has no version"
 
 rm -rf "$tmp_sha_work"
 
+# --- 3 provenance scenarios (skill_version / skill_sha) ------------------
+tmp_prov_work=$(mktemp -d)
+
+setup_mock_skill_scripts() {
+  local target_dir=$1
+  mkdir -p "$target_dir/scripts/lib"
+  cp "$SCRIPTS_DIR/record-outcome.sh" "$target_dir/scripts/"
+  cp "$SCRIPTS_DIR/lib/common.sh" "$target_dir/scripts/lib/"
+}
+
+# Scenario (a): Non-git release directory
+rel_dir="$tmp_prov_work/release_dir"
+mkdir -p "$rel_dir"
+cat <<'EOF' > "$rel_dir/SKILL.md"
+---
+name: implement-issue
+version: 1.0.0
+---
+EOF
+setup_mock_skill_scripts "$rel_dir"
+
+assert_eq "$(skill_version_default "$rel_dir")" "1.0.0" \
+  "provenance (a): non-git release dir skill_version_default returns parsed version"
+assert_eq "$(skill_sha_default "$rel_dir")" "unknown" \
+  "provenance (a): non-git release dir skill_sha_default returns 'unknown'"
+
+rel_ledger="$tmp_prov_work/rel_ledger.jsonl"
+OUTCOMES_FILE="$rel_ledger" "$rel_dir/scripts/record-outcome.sh" 10 title="Release run" >/dev/null 2>&1
+rel_rec=$(cat "$rel_ledger")
+assert_eq "$(jq -r '.skill_version' <<<"$rel_rec")" "1.0.0" \
+  "provenance (a): non-git release dir records parsed skill_version"
+assert_eq "$(jq -r '.skill_sha' <<<"$rel_rec")" "unknown" \
+  "provenance (a): non-git release dir records skill_sha='unknown'"
+
+# Scenario (b): Source checkout directory
+src_dir="$tmp_prov_work/source_checkout"
+mkdir -p "$src_dir"
+git -C "$src_dir" init >/dev/null 2>&1
+git -C "$src_dir" config user.email "test@example.com"
+git -C "$src_dir" config user.name "Test User"
+touch "$src_dir/file.txt"
+git -C "$src_dir" add file.txt
+git -C "$src_dir" commit -m "initial commit" >/dev/null 2>&1
+expected_src_sha=$(git -C "$src_dir" rev-parse --short HEAD)
+cat <<'EOF' > "$src_dir/SKILL.md"
+---
+name: implement-issue
+version: 2.1.0
+---
+EOF
+setup_mock_skill_scripts "$src_dir"
+
+assert_eq "$(skill_version_default "$src_dir")" "2.1.0" \
+  "provenance (b): source checkout skill_version_default returns parsed version"
+assert_eq "$(skill_sha_default "$src_dir")" "$expected_src_sha" \
+  "provenance (b): source checkout skill_sha_default returns commit SHA"
+
+src_ledger="$tmp_prov_work/src_ledger.jsonl"
+OUTCOMES_FILE="$src_ledger" "$src_dir/scripts/record-outcome.sh" 11 title="Source run" >/dev/null 2>&1
+src_rec=$(cat "$src_ledger")
+assert_eq "$(jq -r '.skill_version' <<<"$src_rec")" "2.1.0" \
+  "provenance (b): source checkout records parsed skill_version"
+assert_eq "$(jq -r '.skill_sha' <<<"$src_rec")" "$expected_src_sha" \
+  "provenance (b): source checkout records valid commit skill_sha"
+
+# Scenario (c): Skill directory nested inside an unrelated git repository
+unrelated_repo="$tmp_prov_work/unrelated_repo"
+mkdir -p "$unrelated_repo"
+git -C "$unrelated_repo" init >/dev/null 2>&1
+git -C "$unrelated_repo" config user.email "test@example.com"
+git -C "$unrelated_repo" config user.name "Test User"
+touch "$unrelated_repo/app.js"
+git -C "$unrelated_repo" add app.js
+git -C "$unrelated_repo" commit -m "app init" >/dev/null 2>&1
+git -C "$unrelated_repo" config remote.origin.url "git@github.com:unrelated-org/unrelated-repo.git"
+
+nested_skill_dir="$unrelated_repo/.claude/skills/implement-issue"
+mkdir -p "$nested_skill_dir"
+cat <<'EOF' > "$nested_skill_dir/SKILL.md"
+---
+name: implement-issue
+version: 3.0.0
+---
+EOF
+setup_mock_skill_scripts "$nested_skill_dir"
+
+assert_eq "$(skill_version_default "$nested_skill_dir")" "3.0.0" \
+  "provenance (c): nested in unrelated git repo skill_version_default returns parsed version"
+assert_eq "$(skill_sha_default "$nested_skill_dir")" "unknown" \
+  "provenance (c): nested in unrelated git repo skill_sha_default degrades to 'unknown'"
+
+nested_ledger="$tmp_prov_work/nested_ledger.jsonl"
+OUTCOMES_FILE="$nested_ledger" "$nested_skill_dir/scripts/record-outcome.sh" 12 title="Nested run" >/dev/null 2>&1
+nested_rec=$(cat "$nested_ledger")
+assert_eq "$(jq -r '.skill_version' <<<"$nested_rec")" "3.0.0" \
+  "provenance (c): nested in unrelated git repo records parsed skill_version"
+assert_eq "$(jq -r '.skill_sha' <<<"$nested_rec")" "unknown" \
+  "provenance (c): nested in unrelated git repo records skill_sha='unknown'"
+
+rm -rf "$tmp_prov_work"
+
 echo "record-outcome.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
+

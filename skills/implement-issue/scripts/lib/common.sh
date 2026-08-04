@@ -49,22 +49,47 @@ ensure_label() {
   gh label create "$name" --color "$color" --description "$desc" --force >/dev/null 2>&1
 }
 
-# Returns the skill's short git commit SHA, falling back to v<version> from
-# SKILL.md frontmatter if not in a git repository (e.g. release store install),
-# or "unknown" if neither can be resolved.
-skill_sha_default() {
-  local skill_dir="${1:-${DIR:-}/..}"
-  local sha
-  sha=$(git -C "$skill_dir" rev-parse --short HEAD 2>/dev/null)
-  if [[ -n "$sha" ]]; then
-    echo "$sha"
+# Returns true if dir is either a git repository top-level root or belongs
+# to the skill repo (via remote URL check).
+is_skill_repo() {
+  local dir=$1
+  local dir_abs toplevel remote_url
+  dir_abs=$(cd "$dir" 2>/dev/null && pwd -P) || return 1
+  toplevel=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || return 1
+  if [[ "$dir_abs" == "$toplevel" ]]; then
     return 0
   fi
+  remote_url=$(git -C "$dir" config --get remote.origin.url 2>/dev/null || true)
+  if [[ "$remote_url" == *"agentic-engineering"* ]]; then
+    return 0
+  fi
+  return 1
+}
+
+# Returns the skill's short git commit SHA if skill_dir is inside the skill repo or a git root,
+# or "unknown" otherwise.
+skill_sha_default() {
+  local skill_dir="${1:-${DIR:-}/..}"
+  if is_skill_repo "$skill_dir"; then
+    local sha
+    sha=$(git -C "$skill_dir" rev-parse --short HEAD 2>/dev/null || true)
+    if [[ -n "$sha" ]]; then
+      echo "$sha"
+      return 0
+    fi
+  fi
+  echo "unknown"
+}
+
+# Returns the skill's version from SKILL.md frontmatter (^version: ...),
+# or "unknown" if missing or unparseable.
+skill_version_default() {
+  local skill_dir="${1:-${DIR:-}/..}"
   if [[ -f "$skill_dir/SKILL.md" ]]; then
     local ver
     ver=$(sed -n -E 's/^[[:space:]]*version:[[:space:]]*["'\'']?([^"'\''[:space:]]+)["'\'']?.*/\1/p' "$skill_dir/SKILL.md" | head -n 1)
     if [[ -n "$ver" ]]; then
-      echo "v$ver"
+      echo "$ver"
       return 0
     fi
   fi
