@@ -115,7 +115,7 @@ expected_git_sha=$(git -C "$git_repo" rev-parse --short HEAD)
 assert_eq "$(skill_sha_default "$git_repo")" "$expected_git_sha" \
   "skill_sha_default returns git short SHA when git repo exists"
 
-# 2. git sha fails / not a git repo, but SKILL.md with version: X.Y.Z exists -> returns vX.Y.Z
+# 2. skill_version_default extracts version from SKILL.md when not a git repo; skill_sha_default returns unknown
 release_store="$tmp_sha_work/release_store"
 mkdir -p "$release_store"
 cat <<'EOF' > "$release_store/SKILL.md"
@@ -126,8 +126,10 @@ version: 1.0.0
 ---
 EOF
 
-assert_eq "$(skill_sha_default "$release_store")" "v1.0.0" \
-  "skill_sha_default falls back to v<version> from SKILL.md when not a git repo"
+assert_eq "$(skill_version_default "$release_store")" "1.0.0" \
+  "skill_version_default extracts version from SKILL.md"
+assert_eq "$(skill_sha_default "$release_store")" "unknown" \
+  "skill_sha_default returns 'unknown' when not a git repo"
 
 cat <<'EOF' > "$release_store/SKILL.md"
 ---
@@ -136,8 +138,8 @@ version: "2.3.4-beta"
 ---
 EOF
 
-assert_eq "$(skill_sha_default "$release_store")" "v2.3.4-beta" \
-  "skill_sha_default handles quoted version strings in SKILL.md"
+assert_eq "$(skill_version_default "$release_store")" "2.3.4-beta" \
+  "skill_version_default handles quoted version strings in SKILL.md"
 
 # 3. both git sha and SKILL.md version fail / missing -> returns unknown
 empty_store="$tmp_sha_work/empty_store"

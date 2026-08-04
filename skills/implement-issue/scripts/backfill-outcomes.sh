@@ -49,6 +49,7 @@ cmd_extract() {
     --slurpfile issue_arr "$issue_file" \
     --slurpfile pr_arr "$pr_file" \
     --arg skill_sha "$(skill_sha_default "$DIR/..")" \
+    --arg skill_version "$(skill_version_default "$DIR/..")" \
     --arg recorded_at "$(date +%F)" \
     '
     ($issue_arr[0]) as $issue |
@@ -94,6 +95,7 @@ cmd_extract() {
       ci_fixes: $ci_fixes,
       wall_clock_hours: $wall_clock_hours,
       skill_sha: $skill_sha,
+      skill_version: $skill_version,
       recorded_at: $recorded_at
     }
     ' || die "failed to extract record from $issue_file / $pr_file"
