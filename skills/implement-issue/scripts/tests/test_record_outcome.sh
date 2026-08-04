@@ -6,6 +6,8 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="$(cd "$TEST_DIR/.." && pwd)"
 # shellcheck source=lib/assert.sh
 source "$TEST_DIR/lib/assert.sh"
+# shellcheck source=../lib/common.sh
+source "$SCRIPTS_DIR/lib/common.sh"
 
 RECORD="$SCRIPTS_DIR/record-outcome.sh"
 
@@ -95,6 +97,66 @@ rec31=$(grep '"issue":31' "$ledger")
 assert_eq "$(jq -r '.recorded_at' <<<"$rec31")" "2020-01-01" "explicit recorded_at is honored"
 assert_eq "$(jq -r '.skill_sha' <<<"$rec31")" "deadbee" "explicit skill_sha is honored"
 rm -f "$ledger"
+
+# --- skill_sha_default resolution order ----------------------------------
+tmp_sha_work=$(mktemp -d)
+
+# 1. git short sha available in git repo
+git_repo="$tmp_sha_work/git_repo"
+mkdir -p "$git_repo"
+git -C "$git_repo" init >/dev/null 2>&1
+git -C "$git_repo" config user.email "test@example.com"
+git -C "$git_repo" config user.name "Test User"
+touch "$git_repo/file.txt"
+git -C "$git_repo" add file.txt
+git -C "$git_repo" commit -m "initial commit" >/dev/null 2>&1
+expected_git_sha=$(git -C "$git_repo" rev-parse --short HEAD)
+
+assert_eq "$(skill_sha_default "$git_repo")" "$expected_git_sha" \
+  "skill_sha_default returns git short SHA when git repo exists"
+
+# 2. git sha fails / not a git repo, but SKILL.md with version: X.Y.Z exists -> returns vX.Y.Z
+release_store="$tmp_sha_work/release_store"
+mkdir -p "$release_store"
+cat <<'EOF' > "$release_store/SKILL.md"
+---
+name: implement-issue
+description: test skill
+version: 1.0.0
+---
+EOF
+
+assert_eq "$(skill_sha_default "$release_store")" "v1.0.0" \
+  "skill_sha_default falls back to v<version> from SKILL.md when not a git repo"
+
+cat <<'EOF' > "$release_store/SKILL.md"
+---
+name: test-quoted
+version: "2.3.4-beta"
+---
+EOF
+
+assert_eq "$(skill_sha_default "$release_store")" "v2.3.4-beta" \
+  "skill_sha_default handles quoted version strings in SKILL.md"
+
+# 3. both git sha and SKILL.md version fail / missing -> returns unknown
+empty_store="$tmp_sha_work/empty_store"
+mkdir -p "$empty_store"
+
+assert_eq "$(skill_sha_default "$empty_store")" "unknown" \
+  "skill_sha_default returns 'unknown' when not a git repo and SKILL.md missing"
+
+cat <<'EOF' > "$empty_store/SKILL.md"
+---
+name: implement-issue
+description: no version field
+---
+EOF
+
+assert_eq "$(skill_sha_default "$empty_store")" "unknown" \
+  "skill_sha_default returns 'unknown' when SKILL.md exists but has no version"
+
+rm -rf "$tmp_sha_work"
 
 echo "record-outcome.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
