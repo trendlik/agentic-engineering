@@ -18,6 +18,10 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.2.1]
+
+Requires explicit user approval before writing project learnings to `.implement-issue/LEARNINGS.md` or executing `git commit` in Phase 8 retrospective. Adds a mandatory `STOP and wait for explicit user response` directive and reply classification consistent with Checkpoint discipline. (#47)
+
 ### [1.2.0]
 
 Fixes skill provenance (`skill_sha`) degradation to `skill@unknown` when `implement-issue` runs from an immutable release-store installation (which carries no `.git` directory). Centralizes resolution in `scripts/lib/common.sh` using a fallback sequence: git short SHA -> `v<version>` parsed from `SKILL.md` frontmatter -> `unknown`. Updates outcome ledger recording, backfill scripts, documentation, and template provenance stamps (`skill@<sha|vVersion>`).
