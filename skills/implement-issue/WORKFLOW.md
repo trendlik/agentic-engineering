@@ -20,7 +20,9 @@ Once `$WORK_DIR` is set, every `git -C "$WORK_DIR" …` command and every sub-ag
 4. **Worktree teardown** — "remove the worktree" on any exit path applies to worktree mode only; local mode has no worktree to remove.
 5. **Commit timing** — worktree mode has each sub-agent commit its own work and the coordinator push at every phase boundary (required for cross-session resume, which reads the remote). Local mode **defers the commit to the approval gate**: the Phase 3, Phase 4, and Phase 6 (review-fix) sub-agents leave their changes uncommitted in `$WORK_DIR`, and the commit + push happen only when the human approves moving on — so the human can review each phase's changed files in their editor *before* anything is committed. See "Local-mode review gate" below.
 
-**Local-mode precondition (checked before Phase 3):** the working tree must be clean — `git status --porcelain` empty. Local mode checks out `$FEATURE_BRANCH` in place, which collides with uncommitted changes. If it's dirty, stop and ask the user to commit or stash first before continuing.
+**Local-mode precondition (checked before Phase 3, and on every Phase 0 resume):** the working tree must be clean — `git status --porcelain` empty. Local mode checks out `$FEATURE_BRANCH` in place, which collides with uncommitted changes; and on a resume into any later phase, pre-existing uncommitted changes would silently be swept into that phase's review gate commit.
+
+If it's dirty, do not proceed and do not decide for the user. Show the changed files and the diff, state that they are **not** part of any phase's work and were not produced by this run, and ask: fold them into this branch, leave them uncommitted and out of scope, or revert them. If they are folded in, treat them as unreviewed changes — they enter Phase 5 like any other diff, so say so rather than implying they are already vetted.
 
 ### Local-mode review gate
 
@@ -114,7 +116,15 @@ STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
     ```
 
     Read the commit messages and changed-files list (and the actual diff for anything non-obvious) to reconstruct "what was implemented" / "what was tested" before feeding it into whichever phase's sub-agent prompt comes next.
-  - Branch doesn't exist: nothing was actually implemented despite the stage label (the previous session likely ended right after Phase 2 approval) — proceed to Phase 3 as normal.
+  - Branch doesn't exist: **in worktree mode**, nothing was actually implemented despite the stage label (the previous session likely ended right after Phase 2 approval) — proceed to Phase 3 as normal.
+
+    **In local mode, check the working tree before concluding that.** Local mode defers each phase's commit to its review gate (divergence 5), so an interrupted session leaves completed work with no commit and no remote branch — indistinguishable, by the remote check alone, from work that never started:
+
+    ```bash
+    git -C "$WORK_DIR" status --porcelain
+    ```
+
+    If it is non-empty, do not proceed to Phase 3. Show the changed files and `git diff --stat`, state that they appear to be `$STAGE`'s output left uncommitted by an interrupted session, and ask whether to **resume at that phase's review gate** (treat the tree as that phase's output: surface it, and commit + push on approval), **discard and re-run the phase**, or **re-run the phase on top of what is there**. Reconstruct the phase's "what I did" context from the diff, as the branch-exists path already prescribes.
 
 - **`done`** — already finished. Tell the user and ask whether they want to re-open work on it anyway (stale label, or genuinely new follow-up work) before doing anything.
 
