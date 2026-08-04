@@ -18,6 +18,12 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.3.0]
+
+Records `skill_version` alongside `skill_sha` in outcome ledger (`.implement-issue/outcomes.jsonl`) to ensure reliable provenance tracking across release store installations and git checkouts (#38). Also updates global default symlinks (`~/.claude/skills/implement-issue` and `~/.gemini/config/skills/implement-issue`) automatically when executing release script (#49).
+
+Not breaking — backward compatible with existing outcome ledger entries and existing symlinks.
+
 ### [1.2.1]
 
 Requires explicit user approval before writing project learnings to `.implement-issue/LEARNINGS.md` or executing `git commit` in Phase 8 retrospective. Adds a mandatory `STOP and wait for explicit user response` directive and reply classification consistent with Checkpoint discipline. (#47)

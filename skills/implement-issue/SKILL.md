@@ -1,7 +1,7 @@
 ---
 name: implement-issue
 description: A gated, approval-driven workflow that takes a GitHub issue to a merged PR through clarify → plan → implement → test → review → CI-watch → retrospective phases. The coordinator never edits code itself — implementation happens only in a plan-gated sub-agent (Phase 3). Use when the user says "implement issue #N", "/implement-issue N", or wants to work a GitHub issue through to a pull request.
-version: 1.2.1
+version: 1.3.0
 ---
 
 # implement-issue
