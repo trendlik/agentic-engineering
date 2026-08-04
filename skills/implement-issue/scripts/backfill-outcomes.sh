@@ -39,12 +39,6 @@ source "$DIR/lib/common.sh"
 
 require_cmd jq "brew install jq"
 
-skill_sha_default() {
-  local sha
-  sha=$(git -C "$DIR/.." rev-parse --short HEAD 2>/dev/null)
-  [[ -n "$sha" ]] && echo "$sha" || echo "unknown"
-}
-
 cmd_extract() {
   local issue_file=${1:?usage: backfill-outcomes.sh extract <issue-json-file> <pr-json-file>}
   local pr_file=${2:?usage: backfill-outcomes.sh extract <issue-json-file> <pr-json-file>}
@@ -54,7 +48,7 @@ cmd_extract() {
   jq -nc \
     --slurpfile issue_arr "$issue_file" \
     --slurpfile pr_arr "$pr_file" \
-    --arg skill_sha "$(skill_sha_default)" \
+    --arg skill_sha "$(skill_sha_default "$DIR/..")" \
     --arg recorded_at "$(date +%F)" \
     '
     ($issue_arr[0]) as $issue |

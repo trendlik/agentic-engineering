@@ -1008,7 +1008,7 @@ Show the project-scoped proposals to the user in a single message. Ask:
 For each accepted proposal:
 
 1. If `.implement-issue/LEARNINGS.md` doesn't exist at the project root, create it from `$SKILL_DIR/templates/LEARNINGS.md`.
-2. Append the entry under its target section heading, ending with provenance: `(issue #<number>, <YYYY-MM-DD>, skill@$(git -C "$SKILL_DIR" rev-parse --short HEAD))`.
+2. Append the entry under its target section heading, ending with provenance: `(issue #<number>, <YYYY-MM-DD>, skill@<sha|vVersion>)` — using the short git commit SHA if `$SKILL_DIR` is a git checkout, falling back to `v<version>` from `$SKILL_DIR/SKILL.md` frontmatter (or `unknown` if neither is resolvable).
 3. Commit in the project repo:
 
 ```bash

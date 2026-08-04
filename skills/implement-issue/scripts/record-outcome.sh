@@ -21,7 +21,8 @@
 # - `outcome` must be one of: merged, closed, aborted.
 # - Any known key not supplied is written as JSON null.
 # - `recorded_at` defaults to today (`date +%F`); `skill_sha` defaults to
-#   this skill's short commit sha (or "unknown" if that can't be resolved).
+#   this skill's short commit sha (or v<version> from SKILL.md frontmatter,
+#   or "unknown" if neither can be resolved).
 # - UPSERT keyed on `issue`: replaces any existing line for the same issue
 #   number in place, never appends a duplicate.
 #
@@ -144,8 +145,7 @@ if [[ "$jq_set_fields" != *'recorded_at:'* ]]; then
   jq_set_fields="$jq_set_fields, recorded_at: \$recorded_at"
 fi
 if [[ "$jq_set_fields" != *'skill_sha:'* ]]; then
-  skill_sha=$(git -C "$DIR/.." rev-parse --short HEAD 2>/dev/null) || skill_sha="unknown"
-  [[ -n "$skill_sha" ]] || skill_sha="unknown"
+  skill_sha=$(skill_sha_default "$DIR/..")
   jq_args+=(--arg skill_sha "$skill_sha")
   jq_set_fields="$jq_set_fields, skill_sha: \$skill_sha"
 fi

@@ -10,7 +10,7 @@ skill's phases, checkpoints, or gates; those are defined only by the skill itsel
 headings below is a flow change by definition and does not belong here — escalate
 it to the skill's maintainers instead (see WORKFLOW.md Phase 8 Step 4b).
 
-Every entry ends with its provenance: `(issue #<n>, YYYY-MM-DD, skill@<short-sha>)`.
+Every entry ends with its provenance: `(issue #<n>, YYYY-MM-DD, skill@<short-sha|vVersion>)`.
 An entry recorded against a much older skill commit may describe behaviour the
 skill no longer has — verify before trusting it.
 

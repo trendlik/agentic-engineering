@@ -48,3 +48,26 @@ ensure_label() {
   local name=$1 color=$2 desc=$3
   gh label create "$name" --color "$color" --description "$desc" --force >/dev/null 2>&1
 }
+
+# Returns the skill's short git commit SHA, falling back to v<version> from
+# SKILL.md frontmatter if not in a git repository (e.g. release store install),
+# or "unknown" if neither can be resolved.
+skill_sha_default() {
+  local skill_dir="${1:-${DIR:-}/..}"
+  local sha
+  sha=$(git -C "$skill_dir" rev-parse --short HEAD 2>/dev/null)
+  if [[ -n "$sha" ]]; then
+    echo "$sha"
+    return 0
+  fi
+  if [[ -f "$skill_dir/SKILL.md" ]]; then
+    local ver
+    ver=$(sed -n -E 's/^[[:space:]]*version:[[:space:]]*["'\'']?([^"'\''[:space:]]+)["'\'']?.*/\1/p' "$skill_dir/SKILL.md" | head -n 1)
+    if [[ -n "$ver" ]]; then
+      echo "v$ver"
+      return 0
+    fi
+  fi
+  echo "unknown"
+}
+
