@@ -22,7 +22,7 @@ Once `$WORK_DIR` is set, every `git -C "$WORK_DIR" …` command and every sub-ag
 
 **Local-mode precondition (checked before Phase 3, and on every Phase 0 resume):** the working tree must be clean — `git status --porcelain` empty. Local mode checks out `$FEATURE_BRANCH` in place, which collides with uncommitted changes; and on a resume into any later phase, pre-existing uncommitted changes would silently be swept into that phase's review gate commit.
 
-If it's dirty, do not proceed and do not decide for the user. Show the changed files and the diff, state that they are **not** part of any phase's work and were not produced by this run, and ask: fold them into this branch, leave them uncommitted and out of scope, or revert them. If they are folded in, treat them as unreviewed changes — they enter Phase 5 like any other diff, so say so rather than implying they are already vetted.
+If it's dirty, do not proceed and do not decide for the user. Show the changed files and the diff, state that they are **not** part of any phase's work and were not produced by this run, and ask: fold them into this branch, or stash (`git stash`), commit elsewhere, or revert them so `$WORK_DIR` is clean before proceeding (since local mode's review gate stages with `git add -A`, leaving out-of-scope files uncommitted in `$WORK_DIR` would cause them to be silently swept into the next review gate commit). If they are folded in, treat them as unreviewed changes — they enter Phase 5 like any other diff, so say so rather than implying they are already vetted.
 
 ### Local-mode review gate
 
@@ -106,7 +106,9 @@ STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
   git ls-remote --heads origin "$FEATURE_BRANCH"
   ```
 
-  - Branch exists: tell the user implementation may already be underway; ask whether to continue from it (worktree mode: fetch into a fresh worktree; local mode: check out `$FEATURE_BRANCH` in the clean main checkout — `git fetch origin && git checkout -B "$FEATURE_BRANCH" "origin/$FEATURE_BRANCH"`; then resume at `$STAGE`) or discard it and restart Phase 3.
+  - Branch exists: tell the user implementation may already be underway; ask whether to continue from it or discard it and restart Phase 3.
+    - **Worktree mode:** fetch into a fresh worktree, then resume at `$STAGE`.
+    - **Local mode:** check `git -C "$WORK_DIR" status --porcelain` before checking out `$FEATURE_BRANCH`. If it is non-empty, show the changed files and `git diff --stat`. If the changes are interrupted phase output from `$STAGE` (e.g. Phase 4 or Phase 6 fix left uncommitted after Phase 3 was committed and pushed), ask whether to **resume at that phase's review gate** (presenting the standard Local-mode review gate prompt: approve / request changes / stop, adhering to Checkpoint Discipline), **discard uncommitted changes** and check out `origin/$FEATURE_BRANCH`, or **re-run the phase on top of what is there**. Otherwise, enforce the Local-mode precondition (fold in, or stash, commit elsewhere, or revert) before checking out `$FEATURE_BRANCH` (`git fetch origin && git checkout -B "$FEATURE_BRANCH" "origin/$FEATURE_BRANCH"`). Then resume at `$STAGE`.
 
     If continuing: unlike the clarification and plan, the Phase 3/4 sub-agents' own "what I implemented" / "what I tested" prose reports are never persisted anywhere — do not assume they're recoverable from a prior session. Derive that context directly from the branch instead, which is more reliable anyway:
 
@@ -124,7 +126,7 @@ STAGE=$("$SKILL_DIR/scripts/state.sh" get <number>)
     git -C "$WORK_DIR" status --porcelain
     ```
 
-    If it is non-empty, do not proceed to Phase 3. Show the changed files and `git diff --stat`, state that they appear to be `$STAGE`'s output left uncommitted by an interrupted session, and ask whether to **resume at that phase's review gate** (treat the tree as that phase's output: surface it, and commit + push on approval), **discard and re-run the phase**, or **re-run the phase on top of what is there**. Reconstruct the phase's "what I did" context from the diff, as the branch-exists path already prescribes.
+    If it is non-empty, do not proceed to Phase 3. Show the changed files and `git diff --stat`, state that they appear to be `$STAGE`'s output left uncommitted by an interrupted session, and ask whether to **resume at that phase's review gate** (presenting the standard Local-mode review gate prompt: approve / request changes / stop, adhering to Checkpoint Discipline: surface changes for review, and commit + push on approval or stop, or re-run on request changes), **discard and re-run the phase**, or **re-run the phase on top of what is there**. Reconstruct the phase's "what I did" context from the diff, as the branch-exists path already prescribes.
 
 - **`done`** — already finished. Tell the user and ask whether they want to re-open work on it anyway (stale label, or genuinely new follow-up work) before doing anything.
 
