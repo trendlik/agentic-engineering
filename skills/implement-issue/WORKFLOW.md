@@ -1001,11 +1001,20 @@ Only propose changes that are directly supported by what happened in this sessio
 
 ### Step 4a — Project-scoped proposals → the target project's learnings file
 
-Show the project-scoped proposals to the user in a single message. Ask:
+Project-scoped proposals targeting `.implement-issue/LEARNINGS.md` MUST be presented to the user for approval FIRST before any changes to `.implement-issue/LEARNINGS.md` or git commits are performed. Touching `.implement-issue/LEARNINGS.md` or committing learning entries prior to receiving explicit user approval is a workflow violation.
+
+Show the project-scoped proposals to the user in a single message and ask:
 
 > "Found N project-specific learning(s) from this session. Store all, store selectively, or skip?"
 
-For each accepted proposal:
+**STOP and wait for explicit user response** before modifying `.implement-issue/LEARNINGS.md` or running `git commit`.
+
+Classify the user's reply following **Checkpoint discipline** (top of this file):
+- **Explicit approval ("store all", "store", or selective choices)**: proceed to append only the approved entries and commit.
+- **Skip / decline ("skip")**: do NOT modify `.implement-issue/LEARNINGS.md` and do NOT execute `git commit`.
+- **Question or ambiguous input**: answer the question or address the input, then re-ask the same approval question and wait — do NOT touch `.implement-issue/LEARNINGS.md` or execute `git commit` until explicit approval is received.
+
+For each accepted proposal (once explicit approval is received):
 
 1. If `.implement-issue/LEARNINGS.md` doesn't exist at the project root, create it from `$SKILL_DIR/templates/LEARNINGS.md`.
 2. Append the entry under its target section heading, ending with provenance: `(issue #<number>, <YYYY-MM-DD>, skill@<sha|vVersion>)` — using the short git commit SHA if `$SKILL_DIR` is a git checkout, falling back to `v<version>` from `$SKILL_DIR/SKILL.md` frontmatter (or `unknown` if neither is resolvable).
