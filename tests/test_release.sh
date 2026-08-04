@@ -67,14 +67,16 @@ commit_and_push() {
   git -C "$clone" push -q origin HEAD
 }
 
+TEST_HOME="$WORK_DIR/fakehome"
+
 run_release() {
   local clone=$1 store=$2; shift 2
-  env SKILL_NAME=implement-issue REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
+  env SKILL_NAME=implement-issue REPO_ROOT="$clone" RELEASE_STORE="$store" HOME="${HOME_OVERRIDE:-$TEST_HOME}" "$RELEASE" "$@"
 }
 
 run_release_skill() {
   local skill=$1 clone=$2 store=$3; shift 3
-  env SKILL_NAME="$skill" REPO_ROOT="$clone" RELEASE_STORE="$store" "$RELEASE" "$@"
+  env SKILL_NAME="$skill" REPO_ROOT="$clone" RELEASE_STORE="$store" HOME="${HOME_OVERRIDE:-$TEST_HOME}" "$RELEASE" "$@"
 }
 
 echo "release.sh"
@@ -337,6 +339,106 @@ assert_success "skills/onboard-implement-issue/SKILL.md in repo has valid semver
   bash -c "grep -q '^version: [0-9]\+\.[0-9]\+\.[0-9]\+\$' '$ROOT_DIR/skills/onboard-implement-issue/SKILL.md'"
 assert_success "skills/implement-issue/SKILL.md in repo has valid semver version" \
   bash -c "grep -q '^version: [0-9]\+\.[0-9]\+\.[0-9]\+\$' '$ROOT_DIR/skills/implement-issue/SKILL.md'"
+
+# --- (v) default release creates/updates global adapter symlinks (~/.claude/skills/$SKILL_NAME
+#         and ~/.gemini/config/skills/$SKILL_NAME) pointing directly to $DEST,
+#         and creates latest relative symlink in the release store pointing to $version ---
+FAM_V="$WORK_DIR/fam-v"
+CLONE_V="$FAM_V/clone"
+STORE_V="$WORK_DIR/store-v"
+HOME_V="$WORK_DIR/home-v"
+setup_family "$FAM_V" "version: 1.0.0"
+HOME_OVERRIDE="$HOME_V" assert_success "default release exits 0 (v1.0.0)" run_release "$CLONE_V" "$STORE_V"
+assert_success "latest relative symlink in release store points to version 1.0.0" \
+  bash -c "[[ \$(readlink '$STORE_V/implement-issue/latest') == '1.0.0' ]]"
+assert_success "global claude symlink points directly to DEST (1.0.0)" \
+  bash -c "[[ \$(readlink '$HOME_V/.claude/skills/implement-issue') == '$STORE_V/implement-issue/1.0.0' ]]"
+assert_success "global gemini symlink points directly to DEST (1.0.0)" \
+  bash -c "[[ \$(readlink '$HOME_V/.gemini/config/skills/implement-issue') == '$STORE_V/implement-issue/1.0.0' ]]"
+
+# Bump to 2.0.0 and verify symlinks are updated to 2.0.0 DEST
+write_skill_md "$CLONE_V" "version: 2.0.0"
+commit_and_push "$CLONE_V" "bump to 2.0.0"
+HOME_OVERRIDE="$HOME_V" assert_success "second release exits 0 (v2.0.0)" run_release "$CLONE_V" "$STORE_V"
+assert_success "latest relative symlink updated to 2.0.0" \
+  bash -c "[[ \$(readlink '$STORE_V/implement-issue/latest') == '2.0.0' ]]"
+assert_success "global claude symlink updated to DEST (2.0.0)" \
+  bash -c "[[ \$(readlink '$HOME_V/.claude/skills/implement-issue') == '$STORE_V/implement-issue/2.0.0' ]]"
+assert_success "global gemini symlink updated to DEST (2.0.0)" \
+  bash -c "[[ \$(readlink '$HOME_V/.gemini/config/skills/implement-issue') == '$STORE_V/implement-issue/2.0.0' ]]"
+
+# Verify multi-adapter global symlink creation for another skill (onboard-implement-issue)
+FAM_V2="$WORK_DIR/fam-v2"
+CLONE_V2="$FAM_V2/clone"
+STORE_V2="$WORK_DIR/store-v2"
+setup_family "$FAM_V2" "version: 1.0.0" "" "onboard-implement-issue"
+HOME_OVERRIDE="$HOME_V" assert_success "default release exits 0 for onboard-implement-issue" \
+  run_release_skill "onboard-implement-issue" "$CLONE_V2" "$STORE_V2"
+assert_success "global claude symlink points to onboard-implement-issue DEST" \
+  bash -c "[[ \$(readlink '$HOME_V/.claude/skills/onboard-implement-issue') == '$STORE_V2/onboard-implement-issue/1.0.0' ]]"
+assert_success "global gemini symlink points to onboard-implement-issue DEST" \
+  bash -c "[[ \$(readlink '$HOME_V/.gemini/config/skills/onboard-implement-issue') == '$STORE_V2/onboard-implement-issue/1.0.0' ]]"
+
+# --- (w) --no-global flag prevents creating/updating global adapter symlinks
+#         while maintaining the store latest symlink ---
+FAM_W="$WORK_DIR/fam-w"
+CLONE_W="$FAM_W/clone"
+STORE_W="$WORK_DIR/store-w"
+HOME_W="$WORK_DIR/home-w"
+setup_family "$FAM_W" "version: 1.0.0"
+HOME_OVERRIDE="$HOME_W" assert_success "release with --no-global exits 0" \
+  run_release "$CLONE_W" "$STORE_W" --no-global
+assert_success "--no-global release creates archived snapshot" \
+  bash -c "[[ -f '$STORE_W/implement-issue/1.0.0/SKILL.md' ]]"
+assert_success "--no-global release creates latest relative symlink in release store" \
+  bash -c "[[ \$(readlink '$STORE_W/implement-issue/latest') == '1.0.0' ]]"
+assert_failure "--no-global prevents creating global claude symlink" \
+  bash -c "[[ -e '$HOME_W/.claude/skills/implement-issue' || -L '$HOME_W/.claude/skills/implement-issue' ]]"
+assert_failure "--no-global prevents creating global gemini symlink" \
+  bash -c "[[ -e '$HOME_W/.gemini/config/skills/implement-issue' || -L '$HOME_W/.gemini/config/skills/implement-issue' ]]"
+
+# Pre-create global symlinks pointing to old version and verify --no-global does NOT update them
+mkdir -p "$HOME_W/.claude/skills" "$HOME_W/.gemini/config/skills"
+ln -sfn "$STORE_W/implement-issue/1.0.0" "$HOME_W/.claude/skills/implement-issue"
+ln -sfn "$STORE_W/implement-issue/1.0.0" "$HOME_W/.gemini/config/skills/implement-issue"
+write_skill_md "$CLONE_W" "version: 2.0.0"
+commit_and_push "$CLONE_W" "bump to 2.0.0"
+HOME_OVERRIDE="$HOME_W" assert_success "release 2.0.0 with --no-global exits 0" \
+  run_release "$CLONE_W" "$STORE_W" --no-global
+assert_success "--no-global release updates latest relative symlink to 2.0.0" \
+  bash -c "[[ \$(readlink '$STORE_W/implement-issue/latest') == '2.0.0' ]]"
+assert_success "--no-global release does NOT update pre-existing global claude symlink" \
+  bash -c "[[ \$(readlink '$HOME_W/.claude/skills/implement-issue') == '$STORE_W/implement-issue/1.0.0' ]]"
+assert_success "--no-global release does NOT update pre-existing global gemini symlink" \
+  bash -c "[[ \$(readlink '$HOME_W/.gemini/config/skills/implement-issue') == '$STORE_W/implement-issue/1.0.0' ]]"
+
+# --- (x) --dry-run reports intended global symlink updates without mutating the filesystem ---
+FAM_X="$WORK_DIR/fam-x"
+CLONE_X="$FAM_X/clone"
+STORE_X="$WORK_DIR/store-x"
+HOME_X="$WORK_DIR/home-x"
+setup_family "$FAM_X" "version: 1.0.0"
+
+dry_output=$(HOME_OVERRIDE="$HOME_X" run_release "$CLONE_X" "$STORE_X" --dry-run 2>&1)
+assert_success "--dry-run reports latest symlink update" \
+  grep -q "\[dry-run\] would update store latest symlink: $STORE_X/implement-issue/latest -> 1.0.0" <<<"$dry_output"
+assert_success "--dry-run reports global claude symlink update" \
+  grep -q "\[dry-run\] would update global default symlink: $HOME_X/\.claude/skills/implement-issue -> $STORE_X/implement-issue/1.0.0" <<<"$dry_output"
+assert_success "--dry-run reports global gemini symlink update" \
+  grep -q "\[dry-run\] would update global default symlink: $HOME_X/\.gemini/config/skills/implement-issue -> $STORE_X/implement-issue/1.0.0" <<<"$dry_output"
+
+assert_failure "--dry-run does not create store latest symlink" \
+  bash -c "[[ -e '$STORE_X/implement-issue/latest' || -L '$STORE_X/implement-issue/latest' ]]"
+assert_failure "--dry-run does not create global claude symlink" \
+  bash -c "[[ -e '$HOME_X/.claude/skills/implement-issue' || -L '$HOME_X/.claude/skills/implement-issue' ]]"
+assert_failure "--dry-run does not create global gemini symlink" \
+  bash -c "[[ -e '$HOME_X/.gemini/config/skills/implement-issue' || -L '$HOME_X/.gemini/config/skills/implement-issue' ]]"
+
+dry_no_global_output=$(HOME_OVERRIDE="$HOME_X" run_release "$CLONE_X" "$STORE_X" --dry-run --no-global 2>&1)
+assert_success "--dry-run --no-global reports skipping global symlink update" \
+  grep -q "\[dry-run\] --no-global set; skipping global default symlink update" <<<"$dry_no_global_output"
+assert_failure "--dry-run --no-global does not report updating global default symlink" \
+  grep -q "\[dry-run\] would update global default symlink:" <<<"$dry_no_global_output"
 
 # NOTE: a test asserting "a failed archive leaves no DEST behind" (the new
 # staging+mv behavior from the release.sh fix) was deliberately NOT added

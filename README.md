@@ -91,8 +91,9 @@ curl-one-liner bootstrap; getting the release tool *is* cloning the repo:
 ```
 git clone <this-repo-url>
 cd agentic-engineering
-./release.sh                                      # release implement-issue (default)
-SKILL_NAME=onboard-implement-issue ./release.sh  # release onboard-implement-issue
+./release.sh                                      # release implement-issue (default) & update global defaults
+SKILL_NAME=onboard-implement-issue ./release.sh  # release onboard-implement-issue & update global defaults
+./release.sh --no-global                          # release snapshot without updating global symlinks
 ./release.sh --dry-run                             # show what would happen without doing it
 ```
 
@@ -114,6 +115,7 @@ dirty, in the clone that's running the script. Concretely, it:
    **pushes the tag to origin**.
 5. `git archive`s the skill subtree at that tag into the release store, then
    `chmod -R a-w`s it.
+6. Updates `~/.agents/releases/<skill>/latest` to point to `<version>`, and (unless `--no-global` is passed) automatically updates global default symlinks (`~/.claude/skills/<skill>` and `~/.gemini/config/skills/<skill>`) to point directly to `~/.agents/releases/<skill>/<version>`.
 
 It defaults to skill `implement-issue` (or set `SKILL_NAME=onboard-implement-issue`), the clone it's run from as
 `REPO_ROOT`, remote `origin` as `ORIGIN`, and `~/.agents/releases` as
@@ -123,9 +125,7 @@ otherwise auto-detects from `ORIGIN`). That's how
 fetch-and-push path against a throwaway bare repo standing in for GitHub,
 without touching the real repo, the real store, or real GitHub.
 
-**`release.sh` never re-points any symlink** (global or per-project) — cutting
-a release only builds the snapshot and pushes its tag. Pointing a consumer at
-it is a separate, explicit step (below).
+By default, **`release.sh` automatically updates global default symlinks** (`~/.claude/skills/<skill>` and `~/.gemini/config/skills/<skill>`) to point directly to the newly released version in `~/.agents/releases/<skill>/<version>` (and updates `~/.agents/releases/<skill>/latest` to point to `<version>`). Projects that have set per-project symlinks continue using their explicitly pinned version because per-project symlinks outrank global symlinks. Pass `--no-global` if you want to cut a release snapshot without updating global default symlinks.
 
 Before running it, bump `version:` in `SKILL.md`, add the matching entry to
 [`CHANGELOG.md`](CHANGELOG.md) (including a **Migration** note if the release

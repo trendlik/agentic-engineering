@@ -15,10 +15,13 @@
 #   RELEASE    $RELEASE_STORE/<name>/<version>/                (immutable snapshot)
 #   CONSUMERS  symlinks into the release store                 (never into SOURCE)
 #
-# This script only builds/freezes the snapshot. It deliberately does NOT
-# create, move, or re-point any symlink (global or per-project) — that is a
-# separate, explicit action (see README.md's "Pin a version" / "Migrate a
-# version" sections).
+# By default, this script updates global adapter symlinks (~/.claude/skills/<name>
+# and ~/.gemini/config/skills/<name>) to point directly to the newly released
+# version ($RELEASE_STORE/<name>/<version>), and maintains a store helper
+# symlink ($RELEASE_STORE/<name>/latest -> <version>).
+# Pass --no-global to create the release snapshot without updating global symlinks.
+# Per-project symlinks (<project>/.claude/skills/<name> and
+# <project>/.agents/skills/<name>) outrank global symlinks.
 #
 # Version source of truth: the `version:` field in the skill's SKILL.md
 # frontmatter AS COMMITTED ON ORIGIN'S DEFAULT BRANCH (not the local working
@@ -40,8 +43,12 @@
 #   6. `git archive` the skill subtree at TAG into DEST (self-contained: only
 #      what's actually committed on origin, never local/uncommitted state).
 #   7. `chmod -R a-w` DEST so the snapshot can't be edited after the fact.
+#   8. Maintain symlinks:
+#      - Update $RELEASE_STORE/<name>/latest relative symlink -> <version>.
+#      - Unless --no-global is set, update global default symlinks
+#        ~/.claude/skills/<name> and ~/.gemini/config/skills/<name> -> DEST.
 #
-# Usage: release.sh [--dry-run]
+# Usage: release.sh [--dry-run] [--no-global]
 #
 # Env overrides (also what the test suite uses to run this without touching
 # the real repo, the real release store, or real GitHub):
@@ -65,10 +72,12 @@ err()   { _color '0;31' "$*" >&2; }
 die()   { err "$*"; exit 1; }
 
 dry_run=0
+no_global=0
 for arg in "$@"; do
   case "$arg" in
     --dry-run) dry_run=1 ;;
-    *) die "usage: release.sh [--dry-run]" ;;
+    --no-global) no_global=1 ;;
+    *) die "usage: release.sh [--dry-run] [--no-global]" ;;
   esac
 done
 
@@ -162,6 +171,13 @@ if [[ $dry_run -eq 1 ]]; then
   info "[dry-run] would push $TAG to $ORIGIN"
   info "[dry-run] would archive skills/$SKILL_NAME @ $TAG into: $DEST"
   info "[dry-run] would chmod -R a-w: $DEST"
+  info "[dry-run] would update store latest symlink: $RELEASE_STORE/$SKILL_NAME/latest -> $version"
+  if [[ $no_global -eq 1 ]]; then
+    info "[dry-run] --no-global set; skipping global default symlink update"
+  else
+    info "[dry-run] would update global default symlink: $HOME/.claude/skills/$SKILL_NAME -> $DEST"
+    info "[dry-run] would update global default symlink: $HOME/.gemini/config/skills/$SKILL_NAME -> $DEST"
+  fi
   exit 0
 fi
 
@@ -211,3 +227,20 @@ STAGING=""  # moved into DEST; nothing left for cleanup_staging to remove
 chmod -R a-w "$DEST" || die "could not chmod -R a-w $DEST"
 
 ok "released $SKILL_NAME v$version -> $DEST (read-only)"
+
+# --- 8. Maintain symlinks: update $RELEASE_STORE/$SKILL_NAME/latest and global default symlinks. ---
+ln -sfn "$version" "$RELEASE_STORE/$SKILL_NAME/latest" || die "could not update latest symlink in $RELEASE_STORE/$SKILL_NAME"
+ok "updated store helper symlink: $RELEASE_STORE/$SKILL_NAME/latest -> $version"
+
+if [[ $no_global -eq 1 ]]; then
+  info "--no-global set; skipping global default symlink update"
+else
+  mkdir -p "$HOME/.claude/skills" || die "could not create $HOME/.claude/skills"
+  mkdir -p "$HOME/.gemini/config/skills" || die "could not create $HOME/.gemini/config/skills"
+
+  ln -sfn "$DEST" "$HOME/.claude/skills/$SKILL_NAME" || die "could not update symlink $HOME/.claude/skills/$SKILL_NAME"
+  ln -sfn "$DEST" "$HOME/.gemini/config/skills/$SKILL_NAME" || die "could not update symlink $HOME/.gemini/config/skills/$SKILL_NAME"
+
+  ok "updated global default symlink: $HOME/.claude/skills/$SKILL_NAME -> $DEST"
+  ok "updated global default symlink: $HOME/.gemini/config/skills/$SKILL_NAME -> $DEST"
+fi
