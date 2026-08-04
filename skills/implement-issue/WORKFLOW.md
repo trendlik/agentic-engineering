@@ -238,6 +238,7 @@ The script composes `<type>/<number>-<slug>` from the issue's labels and title (
 Best effort, non-blocking: `"$SKILL_DIR/scripts/state.sh" set <number> plan`
 
 Draft the implementation plan in the conversation. Include:
+- **Requirements coverage audit:** a 1-to-1 checklist mapping every confirmed requirement and decision from Phase 1 to the specific plan bullet or file change that implements it — confirm no requirement from the issue body or clarification summary was silently omitted
 - Which files will change and why
 - The approach for each change (data model, UI, logic)
 - Edge cases and how they'll be handled
