@@ -12,5 +12,5 @@
 .claude/skills/
 .agents/skills/
 
-claude/settings.json
+.claude/settings.json
 .claude/settings.local.json
