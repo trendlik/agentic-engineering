@@ -150,7 +150,7 @@ cp ~/.claude/skills/implement-issue/templates/LEARNINGS.md .implement-issue/LEAR
 git add .implement-issue/LEARNINGS.md && git commit -m "chore: seed implement-issue learnings"
 ```
 
-It has five fixed headings, each consumed by exactly one phase:
+It has five fixed headings, each **owned** by one phase — and the **Review checklist (Phase 5)** section is additionally sent to the code-writing sub-agents in Phases 3, 4, 6, and 7 as the standards their output is judged against:
 
 - **Clarify checklist (Phase 1)** — extra questions to ask on every issue
 - **Planning constraints (Phase 2)** — architectural gotchas every plan must respect
