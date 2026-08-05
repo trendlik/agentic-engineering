@@ -40,6 +40,11 @@ skill no longer has — verify before trusting it.
   merge, not as a post-merge follow-up — otherwise the first run after merge resolves into
   the mutable SOURCE it is editing. State it as a pre-merge checklist item in the PR body.
   (issue #37, 2026-08-03, skill@v1.0.0)
+- SKILL.md, WORKFLOW.md and ONBOARDING.md restate the same facts for different audiences
+  (coordinator, workflow, first-time setup). A change that makes any documented claim false
+  must sweep all three — plus README.md — for the same claim, and name every file it will
+  touch in the plan. Grep for the claim's distinctive phrasing, not just the file you noticed
+  it in. (issue #42, 2026-08-05, skill@v1.3.0)
 
 ## Build & test (Phase 4)
 
@@ -84,6 +89,16 @@ skill no longer has — verify before trusting it.
   path needs push access, even tag reuse), and the release store is **per-machine**
   (`$HOME/.agents/releases`), so another person's release never appears in your `$HOME`.
   (issue #37, 2026-08-03, skill@v1.0.0)
+- Any instruction addressed to a sub-agent must land where that agent will actually read it —
+  inside a prompt template or an appended block — not in WORKFLOW.md prose around it.
+  WORKFLOW.md is read by the coordinator only; text there reaches a sub-agent solely by being
+  copied into the prompt it assembles. Check the phrasing: if a sentence says "a sub-agent
+  that…", ask whether the sub-agent will ever see that sentence. (issue #42, 2026-08-05,
+  skill@v1.3.0)
+- When adding content to WORKFLOW.md, check the enclosing `###` subsection for a mode or branch
+  condition ("worktree mode only", "skip this block in local mode", a `$RUN_E2E` branch).
+  Content placed there inherits the condition. If it should apply unconditionally, give it its
+  own subsection outside the conditional block. (issue #42, 2026-08-05, skill@v1.3.0)
 
 ## CI quirks (Phase 7)
 
