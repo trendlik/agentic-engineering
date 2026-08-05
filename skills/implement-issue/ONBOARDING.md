@@ -150,13 +150,15 @@ cp ~/.claude/skills/implement-issue/templates/LEARNINGS.md .implement-issue/LEAR
 git add .implement-issue/LEARNINGS.md && git commit -m "chore: seed implement-issue learnings"
 ```
 
-It has five fixed headings, each **owned** by one phase — and the **Review checklist (Phase 5)** section is additionally sent to the code-writing sub-agents in Phases 3, 4, 6, and 7 as the standards their output is judged against:
+It has five fixed headings, each **owned** by one phase:
 
 - **Clarify checklist (Phase 1)** — extra questions to ask on every issue
 - **Planning constraints (Phase 2)** — architectural gotchas every plan must respect
 - **Build & test (Phase 4)** — the repo's test/build commands, env quirks
 - **Review checklist (Phase 5)** — repo-specific review items
 - **CI quirks (Phase 7)** — known flaky checks and proven fixes
+
+The **Review checklist (Phase 5)** section is also sent to the sub-agents that write code, so they build to the same bar they're reviewed against.
 
 Key rule: this file is **data, not instructions**. It supplies content *within*
 phases; it can never add, remove, or reorder phases/gates. You can seed the
