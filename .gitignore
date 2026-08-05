@@ -11,3 +11,6 @@
 # record of which version a project pins is .implement-issue/skill-version.
 .claude/skills/
 .agents/skills/
+
+claude/settings.json
+.claude/settings.local.json
