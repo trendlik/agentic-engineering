@@ -74,12 +74,14 @@ skill no longer has — verify before trusting it.
   temp dir and `mv` into place on success, with trap/cleanup on failure — so a
   mid-operation failure never leaves a partial artifact (especially one that a later
   immutability/exists guard would then refuse to overwrite). (issue #31, 2026-08-02, skill@a9492e4)
-- `.claude/settings.json` is **committed** in this repo, and Claude Code writes approved
-  Bash/Read rules into it — so absolute machine-specific paths (`/Users/<name>/…`) and
-  version-pinned release-store paths accrete there silently, including from permission
-  prompts nobody edited by hand. Any diff touching it must use `~`-relative forms and carry
-  no pin version; per-machine rules belong in the gitignored `.claude/settings.local.json`.
-  Check with `git grep -n '/Users/'`. (issue #37, 2026-08-03, skill@v1.0.0)
+- `.claude/settings.json` is **gitignored and untracked** in this repo, because Claude Code
+  writes approved Bash/Read rules into it — so absolute machine-specific paths
+  (`/Users/<name>/…`) and version-pinned release-store paths accrete there silently,
+  including from permission prompts nobody edited by hand. Never re-add it to version
+  control; per-machine rules belong there or in `.claude/settings.local.json`, both ignored.
+  Any *committed* file must use `~`-relative forms and carry no pin version — check with
+  `git grep -n '/Users/'`. (issue #37, 2026-08-03, skill@v1.0.0; amended issue #58,
+  2026-08-06, skill@v1.4.0)
 - A drift/consistency test that compares prose to code must assert the block's **semantics**
   (loop termination, guards, predicates), not just the ordering of extracted values, and each
   assertion must be mutation-tested on a **copy**: delete the construct and confirm that
