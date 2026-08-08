@@ -224,5 +224,49 @@ rm -f "$all_keys_ledger"
 all_keys_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$all_keys_rec")
 assert_eq "$all_keys_keys" "$record_keys" "record-outcome.sh driven with every KNOWN_KEYS field produces exactly the skeleton's key set, same order (no KNOWN_KEYS entry missing from the jq skeleton)"
 
+# --- header comment's "Fields left null" list must match cmd_extract's -----
+# SKILL.md now points readers at this script's header comment as the
+# authoritative field list for what backfill can't reconstruct (see
+# SKILL.md's "Outcome ledger" section), but unlike record-outcome.sh's
+# KNOWN_KEYS header (guarded above) that comment has no mechanical tie to
+# cmd_extract's jq skeleton — it's hand-maintained prose that can silently
+# drift. Parse the field names out of the "# Fields left null ..." comment
+# block and assert they equal the null-valued keys of a freshly generated
+# extract record, same order (cmd_extract's null fields already come out in
+# comment order, since both are written top-to-bottom against the same jq
+# literal).
+#
+# The parse must not succeed vacuously: if the marker is renamed/removed the
+# awk script never sets grab=1, comment_field_list comes back empty, and the
+# assertion below compares "" against the (non-empty) real null-field list —
+# an inequality, so it fails loudly rather than passing on two empty sides.
+EMDASH=$'\xe2\x80\x94'
+comment_raw=$(awk -v emdash="$EMDASH" '
+  index($0, "# Fields left null") == 1 {
+    grab = 1
+    line = $0
+    sub(/^# Fields left null \(not reconstructable from git\/PR history\):/, "", line)
+    print line
+    next
+  }
+  grab {
+    line = $0
+    sub(/^#[ \t]*/, "", line)
+    if (index(line, emdash) > 0) {
+      line = substr(line, 1, index(line, emdash) - 1)
+      print line
+      exit
+    }
+    print line
+  }
+' "$BACKFILL")
+comment_field_list=$(printf '%s\n' "$comment_raw" \
+  | tr '\n' ' ' \
+  | tr -s '[:space:]' ' ' \
+  | sed -E 's/,[[:space:]]*/,/g; s/^[[:space:]]+//; s/[[:space:]]+$//; s/,$//')
+
+extract_null_keys=$(jq -r 'to_entries | map(select(.value == null) | .key) | join(",")' <<<"$drift_extract_rec")
+assert_eq "$comment_field_list" "$extract_null_keys" "backfill-outcomes.sh's header comment 'Fields left null' list matches cmd_extract's actual null-valued keys exactly, same set AND same order (no doc drift)"
+
 echo "backfill-outcomes.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

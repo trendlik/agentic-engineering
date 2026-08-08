@@ -345,9 +345,17 @@ rm -f "$ledger"
 # see the "unsupplied model fields" block above). The header comment
 # documents omission, not an empty string, as the "phase never ran"
 # convention.
+# NOTE: the `has()` check and the `assert_success` on the invocation itself
+# are load-bearing, not decoration — without them, a mutant that rejects
+# `platform=` (adds the emptiness check this block exists to forbid) writes
+# no record at all, `rec` is empty, and `jq -r '.platform' <<<""` silently
+# prints "" too — the two empty strings would compare equal and this block
+# would pass on a build that behaves exactly the opposite of what it claims.
 ledger=$(mktemp)
-OUTCOMES_FILE="$ledger" "$RECORD" 46 platform= >/dev/null 2>&1
+assert_success "explicit platform= (empty string) is accepted; no emptiness check enforced" \
+  env OUTCOMES_FILE="$ledger" "$RECORD" 46 platform=
 rec=$(cat "$ledger")
+assert_eq "$(jq -r 'has("platform")' <<<"$rec")" "true" "explicit platform= key is present in the record (a record was actually written)"
 assert_eq "$(jq -r '.platform' <<<"$rec")" "" "explicit platform= stores an empty JSON string (no emptiness check enforced)"
 assert_eq "$(jq -r '.platform | type' <<<"$rec")" "string" "explicit platform= is a JSON string, distinguishable from an omitted (null) field"
 rm -f "$ledger"

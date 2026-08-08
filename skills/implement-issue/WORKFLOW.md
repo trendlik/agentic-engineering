@@ -946,8 +946,9 @@ git -C $WORK_DIR diff --stat <base_branch>...HEAD
 # wall_clock_hours: issue createdAt -> PR mergedAt, in hours
 gh issue view <number> --json createdAt
 
-# platform / *_model args below record which adapter and which models ran
-# this run, so the ledger can later be filtered/compared by model:
+# platform and the *_model args (some in the invocation below, the rest in
+# the conditional-append list after it) record which adapter and which
+# models ran this run, so the ledger can later be filtered/compared by model:
 #   - platform: the adapter running this workflow, e.g. `claude-code` or
 #     `antigravity` — free-form, no fixed list.
 #   - coordinator_model: the coordinator's own concrete model ID (e.g.
