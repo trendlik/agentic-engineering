@@ -946,6 +946,23 @@ git -C $WORK_DIR diff --stat <base_branch>...HEAD
 # wall_clock_hours: issue createdAt -> PR mergedAt, in hours
 gh issue view <number> --json createdAt
 
+# platform / *_model args below record which adapter and which models ran
+# this run, so the ledger can later be filtered/compared by model:
+#   - platform: the adapter running this workflow, e.g. `claude-code` or
+#     `antigravity` — free-form, no fixed list.
+#   - coordinator_model: the coordinator's own concrete model ID (e.g.
+#     `claude-opus-5`), self-reported — never guessed. If the coordinator
+#     cannot name its own model, omit this argument rather than guess.
+#   - implement_model / test_model / review_model / fix_model /
+#     ci_fix_model: the alias each sub-agent was actually spawned with (see
+#     SKILL.md's "Model assignments & Capability Tiers" table), e.g.
+#     `sonnet` or `gemini-3.5-flash` — record the alias as spawned, never
+#     the alias's guessed resolved version.
+#   - OMIT the argument entirely (never pass an empty string) for any phase
+#     whose agent was never spawned this run — e.g. no fix_model on an LGTM
+#     review, no ci_fix_model on a green first CI run, no test_model on a
+#     non-logic change. It is then written as null, never defaulted to the
+#     tier's assigned model.
 "$SKILL_DIR/scripts/record-outcome.sh" <number> \
   title="<issue title>" \
   pr=<pr-number> \
@@ -959,7 +976,14 @@ gh issue view <number> --json createdAt
   plan_revisions=<Step 1 tally> \
   review_loops=<Step 1 tally> \
   ci_fixes=<Step 1 tally> \
-  wall_clock_hours=<issue createdAt -> PR mergedAt, in hours>
+  wall_clock_hours=<issue createdAt -> PR mergedAt, in hours> \
+  platform=<adapter running this workflow, e.g. claude-code> \
+  coordinator_model=<coordinator's own concrete model ID, self-reported> \
+  implement_model=<Phase 3 sub-agent's model alias as spawned> \
+  test_model=<Phase 4 sub-agent's model alias as spawned, if it ran> \
+  review_model=<Phase 5 sub-agent's model alias as spawned> \
+  fix_model=<Phase 6 fix sub-agent's model alias as spawned, if it ran> \
+  ci_fix_model=<Phase 7 CI-fix sub-agent's model alias as spawned, if it ran>
 ```
 
 **One-time backfill offer (best-effort, non-blocking — same posture as above).** If this run just seeded a previously-empty ledger (`LEDGER_LINES` was `0`) AND the repo has reconstructable history — at least one already-closed issue carrying a `stage:*` label — then the ledger is missing every issue implemented before it existed. Offer (never force) a one-time backfill so the reference class isn't permanently empty:

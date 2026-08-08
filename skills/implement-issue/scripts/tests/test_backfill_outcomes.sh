@@ -144,5 +144,20 @@ assert_failure "closes-issue: bare '#42' mention (no keyword) does not match" ba
 assert_failure "closes-issue: '#420' does not match issue 42 (no trailing-digit false match)" bash -c "printf 'Closes #420' | \"$BACKFILL\" closes-issue 42"
 assert_failure "closes-issue: 'enclose #42' does not match ('close' as substring of another word)" bash -c "printf 'enclose #42' | \"$BACKFILL\" closes-issue 42"
 
+# --- field-set drift: extract's key set must exactly match record-outcome.sh's
+# null skeleton. The field list is duplicated across the two scripts by
+# design (see WORKFLOW.md/SKILL.md's noted architecture deviation); this
+# assertion is the mechanical guard against the two drifting apart.
+RECORD="$SCRIPTS_DIR/record-outcome.sh"
+drift_ledger=$(mktemp)
+rm -f "$drift_ledger"  # record-outcome.sh must create it itself
+OUTCOMES_FILE="$drift_ledger" "$RECORD" 999 title=DriftCheck >/dev/null 2>&1
+record_min_rec=$(cat "$drift_ledger")
+rm -f "$drift_ledger"
+
+extract_keys=$(jq -S 'keys' <<<"$rec")
+record_keys=$(jq -S 'keys' <<<"$record_min_rec")
+assert_eq "$extract_keys" "$record_keys" "extract's key set matches record-outcome.sh's null skeleton exactly (no field-list drift)"
+
 echo "backfill-outcomes.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
