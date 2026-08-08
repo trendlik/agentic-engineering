@@ -291,16 +291,27 @@ assert_eq "$(jq -r '.ci_fix_model | type' <<<"$rec")" "string" "ci_fix_model ser
 rm -f "$ledger"
 
 # --- unsupplied model fields are JSON null, including mixed supplied/omitted
+# `jq -r '.platform'` alone can't tell a present-but-null key from an
+# altogether ABSENT one — both print the literal string "null" — so each
+# field also gets a `has()` presence check; only the pair together proves
+# the key survives in the record shape even when its value is unset.
 ledger=$(mktemp)
 OUTCOMES_FILE="$ledger" "$RECORD" 41 title=NoModels >/dev/null 2>&1
 rec=$(cat "$ledger")
 assert_eq "$(jq -r '.platform' <<<"$rec")" "null" "unsupplied platform is JSON null"
+assert_eq "$(jq -r 'has("platform")' <<<"$rec")" "true" "unsupplied platform key is present (not absent)"
 assert_eq "$(jq -r '.coordinator_model' <<<"$rec")" "null" "unsupplied coordinator_model is JSON null"
+assert_eq "$(jq -r 'has("coordinator_model")' <<<"$rec")" "true" "unsupplied coordinator_model key is present (not absent)"
 assert_eq "$(jq -r '.implement_model' <<<"$rec")" "null" "unsupplied implement_model is JSON null"
+assert_eq "$(jq -r 'has("implement_model")' <<<"$rec")" "true" "unsupplied implement_model key is present (not absent)"
 assert_eq "$(jq -r '.test_model' <<<"$rec")" "null" "unsupplied test_model is JSON null"
+assert_eq "$(jq -r 'has("test_model")' <<<"$rec")" "true" "unsupplied test_model key is present (not absent)"
 assert_eq "$(jq -r '.review_model' <<<"$rec")" "null" "unsupplied review_model is JSON null"
+assert_eq "$(jq -r 'has("review_model")' <<<"$rec")" "true" "unsupplied review_model key is present (not absent)"
 assert_eq "$(jq -r '.fix_model' <<<"$rec")" "null" "unsupplied fix_model is JSON null"
+assert_eq "$(jq -r 'has("fix_model")' <<<"$rec")" "true" "unsupplied fix_model key is present (not absent)"
 assert_eq "$(jq -r '.ci_fix_model' <<<"$rec")" "null" "unsupplied ci_fix_model is JSON null"
+assert_eq "$(jq -r 'has("ci_fix_model")' <<<"$rec")" "true" "unsupplied ci_fix_model key is present (not absent)"
 rm -f "$ledger"
 
 # Mixed case: an LGTM review + green-first-CI run supplies platform and the

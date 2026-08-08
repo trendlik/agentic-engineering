@@ -978,13 +978,13 @@ gh issue view <number> --json createdAt
   ci_fixes=<Step 1 tally> \
   wall_clock_hours=<issue createdAt -> PR mergedAt, in hours> \
   platform=<adapter running this workflow, e.g. claude-code> \
-  coordinator_model=<coordinator's own concrete model ID, self-reported> \
   implement_model=<Phase 3 sub-agent's model alias as spawned> \
   review_model=<Phase 5 sub-agent's model alias as spawned>
 ```
 
-The base invocation above is the complete command whenever Phase 4, a Phase 6 fix round, and a Phase 7 CI-fix round were all skipped this run. Append the arguments below individually, and only for a phase that actually ran — each one added the same way any base arg is (a trailing ` \` on the new preceding last line, then the `key=value`), so the invocation stays a single command:
+The base invocation above is the complete command for a run that reached Phase 5 review, when the coordinator cannot self-report its own model and Phase 4, a Phase 6 fix round, and a Phase 7 CI-fix round were all skipped this run. `implement_model`/`review_model` belong in the base (not the conditional list below) because they apply whenever Phase 3/Phase 5 ran, which is true of every non-aborted run this base already assumes — see the stop-and-report/aborted-run note below the appended-arguments list for the exception where they don't apply. Append the arguments below individually, and only for the stated condition — each one added the same way any base arg is (a trailing ` \` on the new preceding last line, then the `key=value`), so the invocation stays a single command:
 
+- append `coordinator_model=<coordinator's own concrete model ID, self-reported>` only if the coordinator can name its own model
 - append `test_model=<Phase 4 sub-agent's model alias as spawned>` only if Phase 4 (test) ran
 - append `fix_model=<Phase 6 fix sub-agent's model alias as spawned>` only if a Phase 6 fix round ran
 - append `ci_fix_model=<Phase 7 CI-fix sub-agent's model alias as spawned>` only if a Phase 7 CI-fix round ran
@@ -1003,7 +1003,7 @@ fi
 
 Show the user the dry-run preview, explain the ledger was empty but backfillable from existing history, and ask whether to run `"$SKILL_DIR/scripts/backfill-outcomes.sh" run` (which upserts the reconstructed records). This is an offer, not an action — same best-effort posture as `record-outcome.sh` above; a `gh` failure must never stop the retrospective. If either condition is false (a fresh repo with no history, or a ledger that already has entries) or the user declines, skip silently — this must never nag on a normal run.
 
-On a stop-and-report exit (no PR merged), still write a record with `outcome=aborted` and whatever fields are actually known (e.g. `pr`, `diff_loc`, and `wall_clock_hours` may be unavailable if no PR was ever opened) — leave the rest null rather than guessing.
+On a stop-and-report exit (no PR merged), still write a record with `outcome=aborted` and whatever fields are actually known (e.g. `pr`, `diff_loc`, and `wall_clock_hours` may be unavailable if no PR was ever opened) — leave the rest null rather than guessing. In particular, the base invocation's `implement_model`/`review_model` args assume Phase 3/Phase 5 ran: if the run aborted before reaching one, drop that arg from the base template above rather than guessing — the same "omit rather than guess" rule the conditional arguments follow.
 
 ### Step 2 — Diagnose bottlenecks
 

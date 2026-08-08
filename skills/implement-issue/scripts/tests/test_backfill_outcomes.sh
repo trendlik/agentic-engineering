@@ -173,5 +173,56 @@ extract_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$drift_extract_rec")
 record_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$drift_record_min_rec")
 assert_eq "$extract_keys" "$record_keys" "extract's keys match record-outcome.sh's null skeleton exactly, same set AND same order (no field-list or ordering drift)"
 
+# --- header comment's key list must exactly match KNOWN_KEYS --------------
+# record-outcome.sh's header comment enumerates the known keys for readers;
+# it's hand-maintained prose with no mechanical tie to KNOWN_KEYS (the
+# actual source of truth the script validates against), so it can silently
+# drift from it. Extract both and compare.
+known_keys_line=$(grep -m1 '^KNOWN_KEYS=' "$RECORD")
+eval "$known_keys_line"
+header_keys=$(awk '
+  /^# Known keys \(anything else is rejected\):/ { grab=1; next }
+  grab && /^#[[:space:]]*$/ { exit }
+  grab { sub(/^#[[:space:]]*/, ""); printf "%s ", $0 }
+' "$RECORD" | sed 's/ *$//')
+assert_eq "$header_keys" "$KNOWN_KEYS" "record-outcome.sh's header comment key list matches KNOWN_KEYS exactly (no doc drift)"
+
+# --- every KNOWN_KEYS entry must have a matching skeleton field -----------
+# The inverse gap: a key added to KNOWN_KEYS but never added to the jq null
+# skeleton is silently accepted by is_known_key and gets appended to the
+# record AFTER recorded_at, breaking the exact field order the drift check
+# above protects. Drive record-outcome.sh with every key in KNOWN_KEYS
+# supplied and confirm the resulting key set matches the skeleton's
+# (`$record_keys`, already established above as the skeleton's key order).
+int_keys_line=$(grep -m1 '^INT_KEYS=' "$RECORD")
+eval "$int_keys_line"
+
+all_keys_args=()
+for k in $KNOWN_KEYS; do
+  [[ "$k" == "issue" ]] && continue  # given positionally, not as key=value
+  case " $INT_KEYS " in
+    *" $k "*) v=7 ;;
+    *)
+      case "$k" in
+        outcome) v=merged ;;
+        wall_clock_hours) v=1.5 ;;
+        *) v="val-$k" ;;
+      esac
+      ;;
+  esac
+  all_keys_args+=("$k=$v")
+done
+
+all_keys_ledger=$(mktemp)
+rm -f "$all_keys_ledger"  # record-outcome.sh must create it itself
+OUTCOMES_FILE="$all_keys_ledger" "$RECORD" 998 "${all_keys_args[@]}" >/dev/null
+all_keys_status=$?
+assert_eq "$all_keys_status" "0" "all-keys-supplied check: record-outcome.sh exits 0 given every KNOWN_KEYS field"
+all_keys_rec=$(cat "$all_keys_ledger")
+rm -f "$all_keys_ledger"
+
+all_keys_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$all_keys_rec")
+assert_eq "$all_keys_keys" "$record_keys" "record-outcome.sh driven with every KNOWN_KEYS field produces exactly the skeleton's key set, same order (no KNOWN_KEYS entry missing from the jq skeleton)"
+
 echo "backfill-outcomes.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
