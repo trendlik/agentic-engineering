@@ -955,10 +955,11 @@ gh issue view <number> --json createdAt
 #     `claude-opus-5`), self-reported — never guessed. If the coordinator
 #     cannot name its own model, omit this argument rather than guess.
 #   - implement_model / test_model / review_model / fix_model /
-#     ci_fix_model: the alias each sub-agent was actually spawned with (see
+#     ci_fix_model: the model tier alias each sub-agent was spawned with (see
 #     SKILL.md's "Model assignments & Capability Tiers" table), e.g.
-#     `sonnet` or `gemini-3.5-flash` — record the alias as spawned, never
-#     the alias's guessed resolved version.
+#     `sonnet` (Claude Code) or `gemini-3.5-flash`/`gemini-3.5-pro` (Antigravity).
+#     On Antigravity, record the tier's assigned model alias (e.g. `gemini-3.5-flash`),
+#     NOT the sub-agent's tool `TypeName` (e.g. `self` or `research`).
 #   - OMIT the argument entirely (never pass an empty string) for any phase
 #     whose agent was never spawned this run — e.g. no fix_model on an LGTM
 #     review, no ci_fix_model on a green first CI run, no test_model on a
