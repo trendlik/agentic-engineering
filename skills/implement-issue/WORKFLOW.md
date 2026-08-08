@@ -946,6 +946,24 @@ git -C $WORK_DIR diff --stat <base_branch>...HEAD
 # wall_clock_hours: issue createdAt -> PR mergedAt, in hours
 gh issue view <number> --json createdAt
 
+# platform and the *_model args (some in the invocation below, the rest in
+# the conditional-append list after it) record which adapter and which
+# models ran this run, so the ledger can later be filtered/compared by model:
+#   - platform: the adapter running this workflow, e.g. `claude-code` or
+#     `antigravity` — free-form, no fixed list.
+#   - coordinator_model: the coordinator's own concrete model ID (e.g.
+#     `claude-opus-5`), self-reported — never guessed. If the coordinator
+#     cannot name its own model, omit this argument rather than guess.
+#   - implement_model / test_model / review_model / fix_model /
+#     ci_fix_model: the alias each sub-agent was actually spawned with (see
+#     SKILL.md's "Model assignments & Capability Tiers" table), e.g.
+#     `sonnet` or `gemini-3.5-flash` — record the alias as spawned, never
+#     the alias's guessed resolved version.
+#   - OMIT the argument entirely (never pass an empty string) for any phase
+#     whose agent was never spawned this run — e.g. no fix_model on an LGTM
+#     review, no ci_fix_model on a green first CI run, no test_model on a
+#     non-logic change. It is then written as null, never defaulted to the
+#     tier's assigned model.
 "$SKILL_DIR/scripts/record-outcome.sh" <number> \
   title="<issue title>" \
   pr=<pr-number> \
@@ -959,8 +977,20 @@ gh issue view <number> --json createdAt
   plan_revisions=<Step 1 tally> \
   review_loops=<Step 1 tally> \
   ci_fixes=<Step 1 tally> \
-  wall_clock_hours=<issue createdAt -> PR mergedAt, in hours>
+  wall_clock_hours=<issue createdAt -> PR mergedAt, in hours> \
+  platform=<adapter running this workflow, e.g. claude-code> \
+  implement_model=<Phase 3 sub-agent's model alias as spawned> \
+  review_model=<Phase 5 sub-agent's model alias as spawned>
 ```
+
+The base invocation above is the complete command for a run that reached Phase 5 review, when the coordinator cannot self-report its own model and Phase 4, a Phase 6 fix round, and a Phase 7 CI-fix round were all skipped this run. `implement_model`/`review_model` belong in the base (not the conditional list below) because they apply whenever Phase 3/Phase 5 ran, which is true of every non-aborted run this base already assumes — see the stop-and-report/aborted-run note below the appended-arguments list for the exception where they don't apply. Append the arguments below individually, and only for the stated condition — each one added the same way any base arg is (a trailing ` \` on the new preceding last line, then the `key=value`), so the invocation stays a single command:
+
+- append `coordinator_model=<coordinator's own concrete model ID, self-reported>` only if the coordinator can name its own model
+- append `test_model=<Phase 4 sub-agent's model alias as spawned>` only if Phase 4 (test) ran
+- append `fix_model=<Phase 6 fix sub-agent's model alias as spawned>` only if a Phase 6 fix round ran
+- append `ci_fix_model=<Phase 7 CI-fix sub-agent's model alias as spawned>` only if a Phase 7 CI-fix round ran
+
+This way the structurally easy path — writing nothing extra — is also the correct one for a phase that never ran; there is no line to delete and no backslash to repair.
 
 **One-time backfill offer (best-effort, non-blocking — same posture as above).** If this run just seeded a previously-empty ledger (`LEDGER_LINES` was `0`) AND the repo has reconstructable history — at least one already-closed issue carrying a `stage:*` label — then the ledger is missing every issue implemented before it existed. Offer (never force) a one-time backfill so the reference class isn't permanently empty:
 
@@ -974,7 +1004,7 @@ fi
 
 Show the user the dry-run preview, explain the ledger was empty but backfillable from existing history, and ask whether to run `"$SKILL_DIR/scripts/backfill-outcomes.sh" run` (which upserts the reconstructed records). This is an offer, not an action — same best-effort posture as `record-outcome.sh` above; a `gh` failure must never stop the retrospective. If either condition is false (a fresh repo with no history, or a ledger that already has entries) or the user declines, skip silently — this must never nag on a normal run.
 
-On a stop-and-report exit (no PR merged), still write a record with `outcome=aborted` and whatever fields are actually known (e.g. `pr`, `diff_loc`, and `wall_clock_hours` may be unavailable if no PR was ever opened) — leave the rest null rather than guessing.
+On a stop-and-report exit (no PR merged), still write a record with `outcome=aborted` and whatever fields are actually known (e.g. `pr`, `diff_loc`, and `wall_clock_hours` may be unavailable if no PR was ever opened) — leave the rest null rather than guessing. In particular, the base invocation's `implement_model`/`review_model` args assume Phase 3/Phase 5 ran: if the run aborted before reaching one, drop that arg from the base template above rather than guessing — the same "omit rather than guess" rule the conditional arguments follow.
 
 ### Step 2 — Diagnose bottlenecks
 

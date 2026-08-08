@@ -268,6 +268,133 @@ assert_eq "$(jq -r '.skill_sha' <<<"$nested_rec")" "unknown" \
 
 rm -rf "$tmp_prov_work"
 
+# --- platform + per-phase *_model fields: all 7 accepted as JSON strings -
+ledger=$(mktemp)
+OUTCOMES_FILE="$ledger" "$RECORD" 40 \
+  platform=claude-code coordinator_model=claude-opus-5 implement_model=sonnet \
+  test_model=sonnet review_model=opus fix_model=sonnet ci_fix_model=haiku >/dev/null 2>&1
+rec=$(cat "$ledger")
+assert_eq "$(jq -r '.platform' <<<"$rec")" "claude-code" "platform stores the exact value passed"
+assert_eq "$(jq -r '.coordinator_model' <<<"$rec")" "claude-opus-5" "coordinator_model stores the exact value passed"
+assert_eq "$(jq -r '.implement_model' <<<"$rec")" "sonnet" "implement_model stores the exact value passed"
+assert_eq "$(jq -r '.test_model' <<<"$rec")" "sonnet" "test_model stores the exact value passed"
+assert_eq "$(jq -r '.review_model' <<<"$rec")" "opus" "review_model stores the exact value passed"
+assert_eq "$(jq -r '.fix_model' <<<"$rec")" "sonnet" "fix_model stores the exact value passed"
+assert_eq "$(jq -r '.ci_fix_model' <<<"$rec")" "haiku" "ci_fix_model stores the exact value passed"
+assert_eq "$(jq -r '.platform | type' <<<"$rec")" "string" "platform serializes as a JSON string, not a number"
+assert_eq "$(jq -r '.coordinator_model | type' <<<"$rec")" "string" "coordinator_model serializes as a JSON string"
+assert_eq "$(jq -r '.implement_model | type' <<<"$rec")" "string" "implement_model serializes as a JSON string"
+assert_eq "$(jq -r '.test_model | type' <<<"$rec")" "string" "test_model serializes as a JSON string"
+assert_eq "$(jq -r '.review_model | type' <<<"$rec")" "string" "review_model serializes as a JSON string"
+assert_eq "$(jq -r '.fix_model | type' <<<"$rec")" "string" "fix_model serializes as a JSON string"
+assert_eq "$(jq -r '.ci_fix_model | type' <<<"$rec")" "string" "ci_fix_model serializes as a JSON string"
+rm -f "$ledger"
+
+# --- unsupplied model fields are JSON null, including mixed supplied/omitted
+# `jq -r '.platform'` alone can't tell a present-but-null key from an
+# altogether ABSENT one — both print the literal string "null" — so each
+# field also gets a `has()` presence check; only the pair together proves
+# the key survives in the record shape even when its value is unset.
+ledger=$(mktemp)
+OUTCOMES_FILE="$ledger" "$RECORD" 41 title=NoModels >/dev/null 2>&1
+rec=$(cat "$ledger")
+assert_eq "$(jq -r '.platform' <<<"$rec")" "null" "unsupplied platform is JSON null"
+assert_eq "$(jq -r 'has("platform")' <<<"$rec")" "true" "unsupplied platform key is present (not absent)"
+assert_eq "$(jq -r '.coordinator_model' <<<"$rec")" "null" "unsupplied coordinator_model is JSON null"
+assert_eq "$(jq -r 'has("coordinator_model")' <<<"$rec")" "true" "unsupplied coordinator_model key is present (not absent)"
+assert_eq "$(jq -r '.implement_model' <<<"$rec")" "null" "unsupplied implement_model is JSON null"
+assert_eq "$(jq -r 'has("implement_model")' <<<"$rec")" "true" "unsupplied implement_model key is present (not absent)"
+assert_eq "$(jq -r '.test_model' <<<"$rec")" "null" "unsupplied test_model is JSON null"
+assert_eq "$(jq -r 'has("test_model")' <<<"$rec")" "true" "unsupplied test_model key is present (not absent)"
+assert_eq "$(jq -r '.review_model' <<<"$rec")" "null" "unsupplied review_model is JSON null"
+assert_eq "$(jq -r 'has("review_model")' <<<"$rec")" "true" "unsupplied review_model key is present (not absent)"
+assert_eq "$(jq -r '.fix_model' <<<"$rec")" "null" "unsupplied fix_model is JSON null"
+assert_eq "$(jq -r 'has("fix_model")' <<<"$rec")" "true" "unsupplied fix_model key is present (not absent)"
+assert_eq "$(jq -r '.ci_fix_model' <<<"$rec")" "null" "unsupplied ci_fix_model is JSON null"
+assert_eq "$(jq -r 'has("ci_fix_model")' <<<"$rec")" "true" "unsupplied ci_fix_model key is present (not absent)"
+rm -f "$ledger"
+
+# Mixed case: an LGTM review + green-first-CI run supplies platform and the
+# phases that actually ran, but omits fix_model/ci_fix_model because those
+# agents were never spawned.
+ledger=$(mktemp)
+OUTCOMES_FILE="$ledger" "$RECORD" 42 \
+  platform=claude-code coordinator_model=claude-opus-5 implement_model=sonnet \
+  test_model=sonnet review_model=opus >/dev/null 2>&1
+rec=$(cat "$ledger")
+assert_eq "$(jq -r '.platform' <<<"$rec")" "claude-code" "mixed case: supplied platform is honored"
+assert_eq "$(jq -r '.implement_model' <<<"$rec")" "sonnet" "mixed case: supplied implement_model is honored"
+assert_eq "$(jq -r '.review_model' <<<"$rec")" "opus" "mixed case: supplied review_model is honored"
+assert_eq "$(jq -r '.fix_model' <<<"$rec")" "null" "mixed case: omitted fix_model (no fix round) is JSON null"
+assert_eq "$(jq -r '.ci_fix_model' <<<"$rec")" "null" "mixed case: omitted ci_fix_model (green first CI) is JSON null"
+rm -f "$ledger"
+
+# --- platform is genuinely free-form: no enum, unlike `outcome` -----------
+# This is the assertion that would fail if someone later bolted an enum
+# check onto `platform` the way `outcome` has one.
+ledger=$(mktemp)
+assert_success "platform accepts an arbitrary unknown value (no enum, unlike outcome)" \
+  env OUTCOMES_FILE="$ledger" "$RECORD" 43 platform=some-future-adapter
+rec=$(grep '"issue":43' "$ledger")
+assert_eq "$(jq -r '.platform' <<<"$rec")" "some-future-adapter" "arbitrary platform value is stored verbatim"
+rm -f "$ledger"
+
+# --- platform= (explicit empty string) pins the omit-vs-empty distinction:
+# no emptiness check is enforced, so `platform=` stores "" (a caller
+# mistake), distinguishable from an omitted argument (which stores null —
+# see the "unsupplied model fields" block above). The header comment
+# documents omission, not an empty string, as the "phase never ran"
+# convention.
+# NOTE: the `has()` check and the `assert_success` on the invocation itself
+# are load-bearing, not decoration — without them, a mutant that rejects
+# `platform=` (adds the emptiness check this block exists to forbid) writes
+# no record at all, `rec` is empty, and `jq -r '.platform' <<<""` silently
+# prints "" too — the two empty strings would compare equal and this block
+# would pass on a build that behaves exactly the opposite of what it claims.
+ledger=$(mktemp)
+assert_success "explicit platform= (empty string) is accepted; no emptiness check enforced" \
+  env OUTCOMES_FILE="$ledger" "$RECORD" 46 platform=
+rec=$(cat "$ledger")
+assert_eq "$(jq -r 'has("platform")' <<<"$rec")" "true" "explicit platform= key is present in the record (a record was actually written)"
+assert_eq "$(jq -r '.platform' <<<"$rec")" "" "explicit platform= stores an empty JSON string (no emptiness check enforced)"
+assert_eq "$(jq -r '.platform | type' <<<"$rec")" "string" "explicit platform= is a JSON string, distinguishable from an omitted (null) field"
+rm -f "$ledger"
+
+# --- *_model fields are not integer-validated: non-numeric values pass ----
+ledger=$(mktemp)
+assert_success "implement_model accepts a non-numeric value (not integer-validated)" \
+  env OUTCOMES_FILE="$ledger" "$RECORD" 44 implement_model=sonnet
+rec=$(cat "$ledger")
+assert_eq "$(jq -r '.implement_model' <<<"$rec")" "sonnet" "non-numeric implement_model is stored as-is"
+assert_eq "$(jq -r '.implement_model | type' <<<"$rec")" "string" "non-numeric implement_model is not coerced to a number"
+rm -f "$ledger"
+
+# --- unknown/misspelled model key is rejected by the known-key check ------
+ledger=$(mktemp)
+assert_failure "misspelled model key (implement_modl) is rejected" \
+  env OUTCOMES_FILE="$ledger" "$RECORD" 45 implement_modl=sonnet
+rm -f "$ledger"
+
+# --- upsert preserves model fields; re-recording replaces only that line --
+ledger=$(mktemp)
+OUTCOMES_FILE="$ledger" "$RECORD" 50 title=Keep platform=claude-code implement_model=sonnet >/dev/null 2>&1
+line50_before=$(grep '"issue":50' "$ledger")
+OUTCOMES_FILE="$ledger" "$RECORD" 51 title=Untouched platform=claude-code implement_model=opus >/dev/null 2>&1
+line51_before=$(grep '"issue":51' "$ledger")
+assert_eq "$(wc -l <"$ledger" | tr -d ' ')" "2" "two distinct issues -> two lines before model-field upsert"
+
+OUTCOMES_FILE="$ledger" "$RECORD" 50 title=Keep platform=antigravity implement_model=haiku coordinator_model=claude-opus-5 >/dev/null 2>&1
+assert_eq "$(wc -l <"$ledger" | tr -d ' ')" "2" "re-recording issue 50 with new model values does not add a line"
+
+line50_after=$(grep '"issue":50' "$ledger")
+line51_after=$(grep '"issue":51' "$ledger")
+assert_eq "$(jq -r '.platform' <<<"$line50_after")" "antigravity" "upserted record reflects new platform"
+assert_eq "$(jq -r '.implement_model' <<<"$line50_after")" "haiku" "upserted record reflects new implement_model"
+assert_eq "$(jq -r '.coordinator_model' <<<"$line50_after")" "claude-opus-5" "upserted record reflects newly-added coordinator_model"
+assert_eq "$line51_after" "$line51_before" "untouched issue 51 line is byte-identical after unrelated upsert (existing lines not migrated)"
+assert_ne "$line50_after" "$line50_before" "issue 50's line actually changed after re-recording (sanity check on the upsert itself)"
+rm -f "$ledger"
+
 echo "record-outcome.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
 

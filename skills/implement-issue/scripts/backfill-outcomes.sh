@@ -30,7 +30,9 @@
 #   pr json:    gh pr view <n> --json number,mergedAt,additions,deletions,files,commits,state
 #
 # Fields left null (not reconstructable from git/PR history): plan_file_count,
-# clarify_rounds, plan_revisions, review_loops.
+# clarify_rounds, plan_revisions, review_loops, platform, coordinator_model,
+# implement_model, test_model, review_model, fix_model, ci_fix_model — `gh`
+# history has no record of which platform or models ran a given phase.
 
 set -uo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -94,6 +96,13 @@ cmd_extract() {
       review_loops: null,
       ci_fixes: $ci_fixes,
       wall_clock_hours: $wall_clock_hours,
+      platform: null,
+      coordinator_model: null,
+      implement_model: null,
+      test_model: null,
+      review_model: null,
+      fix_model: null,
+      ci_fix_model: null,
       skill_sha: $skill_sha,
       skill_version: $skill_version,
       recorded_at: $recorded_at

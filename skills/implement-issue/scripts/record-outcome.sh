@@ -9,9 +9,10 @@
 #   record-outcome.sh <issue> key=value [key=value ...]
 #
 # Known keys (anything else is rejected):
-#   issue pr labels outcome plan_file_count files_changed diff_loc commits
-#   clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours
-#   skill_sha skill_version recorded_at
+#   issue title pr labels outcome plan_file_count files_changed diff_loc
+#   commits clarify_rounds plan_revisions review_loops ci_fixes
+#   wall_clock_hours platform coordinator_model implement_model test_model
+#   review_model fix_model ci_fix_model skill_sha skill_version recorded_at
 #
 # - `issue` is also given positionally (first arg) and must be a
 #   non-negative integer.
@@ -19,6 +20,21 @@
 #   string -> empty array). Limitation: a label name containing a comma
 #   cannot be represented this way and will be split into bogus entries.
 # - `outcome` must be one of: merged, closed, aborted.
+# - `platform` (e.g. `claude-code`, `antigravity`) and the per-phase
+#   `*_model` fields are free-form strings, validated like `title` and
+#   `skill_sha` (no enum, no emptiness check) so a new adapter never needs a
+#   code change here — `platform=` stores `""`, not an error. The caller
+#   convention for "this phase's agent was never spawned in this run" (e.g.
+#   an LGTM review has no fix_model, a green first CI run has no
+#   ci_fix_model, a non-logic change has no test_model) is to OMIT the
+#   argument entirely, never pass `key=""`: an omitted field is written as
+#   JSON null — distinguishable from the empty string an explicit `key=""`
+#   would store — and null is never defaulted to another phase's or tier's
+#   model. Record the most precise identifier actually known: a concrete
+#   model ID for `coordinator_model` (e.g. `claude-opus-5`, self-reported by
+#   the coordinator), and the alias the sub-agent was spawned with for the
+#   other `*_model` fields (e.g. `sonnet`, `gemini-3.5-flash`) — never guess
+#   an alias's resolved version.
 # - Any known key not supplied is written as JSON null.
 # - `recorded_at` defaults to today (`date +%F`); `skill_sha` defaults to
 #   this skill's short commit sha (or "unknown"); `skill_version` defaults to
@@ -37,7 +53,7 @@ source "$DIR/lib/common.sh"
 require_cmd jq "brew install jq"
 
 INT_KEYS="issue pr plan_file_count files_changed diff_loc commits clarify_rounds plan_revisions review_loops ci_fixes"
-KNOWN_KEYS="issue title pr labels outcome plan_file_count files_changed diff_loc commits clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours skill_sha skill_version recorded_at"
+KNOWN_KEYS="issue title pr labels outcome plan_file_count files_changed diff_loc commits clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours platform coordinator_model implement_model test_model review_model fix_model ci_fix_model skill_sha skill_version recorded_at"
 
 is_known_key() {
   local k=$1 x
@@ -164,7 +180,10 @@ record=$(jq -nc "${jq_args[@]}" \
     issue: null, title: null, pr: null, labels: null, outcome: null,
     plan_file_count: null, files_changed: null, diff_loc: null, commits: null,
     clarify_rounds: null, plan_revisions: null, review_loops: null, ci_fixes: null,
-    wall_clock_hours: null, skill_sha: null, skill_version: null, recorded_at: null
+    wall_clock_hours: null,
+    platform: null, coordinator_model: null, implement_model: null,
+    test_model: null, review_model: null, fix_model: null, ci_fix_model: null,
+    skill_sha: null, skill_version: null, recorded_at: null
   } * {'"$jq_set_fields"'}') || die "failed to build JSON record"
 
 # UPSERT: replace any existing line for this issue, else append.

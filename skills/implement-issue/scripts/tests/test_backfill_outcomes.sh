@@ -144,5 +144,130 @@ assert_failure "closes-issue: bare '#42' mention (no keyword) does not match" ba
 assert_failure "closes-issue: '#420' does not match issue 42 (no trailing-digit false match)" bash -c "printf 'Closes #420' | \"$BACKFILL\" closes-issue 42"
 assert_failure "closes-issue: 'enclose #42' does not match ('close' as substring of another word)" bash -c "printf 'enclose #42' | \"$BACKFILL\" closes-issue 42"
 
+# --- field-set drift: extract's keys must exactly match record-outcome.sh's
+# null skeleton, in the SAME ORDER. The field list is duplicated across the
+# two scripts by design (see WORKFLOW.md/SKILL.md's noted architecture
+# deviation); this assertion is the mechanical guard against the two
+# drifting apart. Both scripts write into the same JSONL file, so order
+# drift produces inconsistently-shaped lines, not just a set mismatch.
+#
+# Uses its own locally-scoped extract record (regenerated here, not the
+# $rec left over from the merged-PR fixture ~100 lines above) so this
+# assertion doesn't silently depend on no intervening reassignment.
+RECORD="$SCRIPTS_DIR/record-outcome.sh"
+
+drift_extract_rec=$("$BACKFILL" extract "$issue_merged" "$pr_merged")
+
+drift_ledger=$(mktemp)
+rm -f "$drift_ledger"  # record-outcome.sh must create it itself
+OUTCOMES_FILE="$drift_ledger" "$RECORD" 999 title=DriftCheck >/dev/null
+drift_record_status=$?
+assert_eq "$drift_record_status" "0" "drift check: record-outcome.sh exits 0 writing the minimal DriftCheck record"
+drift_record_min_rec=$(cat "$drift_ledger")
+rm -f "$drift_ledger"
+
+# keys_unsorted preserves insertion order (jq's `keys` sorts, which would
+# hide ordering drift); joining into a single string makes both the set and
+# the order part of one comparable value.
+extract_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$drift_extract_rec")
+record_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$drift_record_min_rec")
+assert_eq "$extract_keys" "$record_keys" "extract's keys match record-outcome.sh's null skeleton exactly, same set AND same order (no field-list or ordering drift)"
+
+# --- header comment's key list must exactly match KNOWN_KEYS --------------
+# record-outcome.sh's header comment enumerates the known keys for readers;
+# it's hand-maintained prose with no mechanical tie to KNOWN_KEYS (the
+# actual source of truth the script validates against), so it can silently
+# drift from it. Extract both and compare.
+known_keys_line=$(grep -m1 '^KNOWN_KEYS=' "$RECORD")
+eval "$known_keys_line"
+header_keys=$(awk '
+  /^# Known keys \(anything else is rejected\):/ { grab=1; next }
+  grab && /^#[[:space:]]*$/ { exit }
+  grab { sub(/^#[[:space:]]*/, ""); printf "%s ", $0 }
+' "$RECORD" | sed 's/ *$//')
+assert_eq "$header_keys" "$KNOWN_KEYS" "record-outcome.sh's header comment key list matches KNOWN_KEYS exactly (no doc drift)"
+
+# --- every KNOWN_KEYS entry must have a matching skeleton field -----------
+# The inverse gap: a key added to KNOWN_KEYS but never added to the jq null
+# skeleton is silently accepted by is_known_key and gets appended to the
+# record AFTER recorded_at, breaking the exact field order the drift check
+# above protects. Drive record-outcome.sh with every key in KNOWN_KEYS
+# supplied and confirm the resulting key set matches the skeleton's
+# (`$record_keys`, already established above as the skeleton's key order).
+int_keys_line=$(grep -m1 '^INT_KEYS=' "$RECORD")
+eval "$int_keys_line"
+
+all_keys_args=()
+for k in $KNOWN_KEYS; do
+  [[ "$k" == "issue" ]] && continue  # given positionally, not as key=value
+  case " $INT_KEYS " in
+    *" $k "*) v=7 ;;
+    *)
+      case "$k" in
+        outcome) v=merged ;;
+        wall_clock_hours) v=1.5 ;;
+        *) v="val-$k" ;;
+      esac
+      ;;
+  esac
+  all_keys_args+=("$k=$v")
+done
+
+all_keys_ledger=$(mktemp)
+rm -f "$all_keys_ledger"  # record-outcome.sh must create it itself
+OUTCOMES_FILE="$all_keys_ledger" "$RECORD" 998 "${all_keys_args[@]}" >/dev/null
+all_keys_status=$?
+assert_eq "$all_keys_status" "0" "all-keys-supplied check: record-outcome.sh exits 0 given every KNOWN_KEYS field"
+all_keys_rec=$(cat "$all_keys_ledger")
+rm -f "$all_keys_ledger"
+
+all_keys_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$all_keys_rec")
+assert_eq "$all_keys_keys" "$record_keys" "record-outcome.sh driven with every KNOWN_KEYS field produces exactly the skeleton's key set, same order (no KNOWN_KEYS entry missing from the jq skeleton)"
+
+# --- header comment's "Fields left null" list must match cmd_extract's -----
+# SKILL.md now points readers at this script's header comment as the
+# authoritative field list for what backfill can't reconstruct (see
+# SKILL.md's "Outcome ledger" section), but unlike record-outcome.sh's
+# KNOWN_KEYS header (guarded above) that comment has no mechanical tie to
+# cmd_extract's jq skeleton — it's hand-maintained prose that can silently
+# drift. Parse the field names out of the "# Fields left null ..." comment
+# block and assert they equal the null-valued keys of a freshly generated
+# extract record, same order (cmd_extract's null fields already come out in
+# comment order, since both are written top-to-bottom against the same jq
+# literal).
+#
+# The parse must not succeed vacuously: if the marker is renamed/removed the
+# awk script never sets grab=1, comment_field_list comes back empty, and the
+# assertion below compares "" against the (non-empty) real null-field list —
+# an inequality, so it fails loudly rather than passing on two empty sides.
+EMDASH=$'\xe2\x80\x94'
+comment_raw=$(awk -v emdash="$EMDASH" '
+  index($0, "# Fields left null") == 1 {
+    grab = 1
+    line = $0
+    sub(/^# Fields left null \(not reconstructable from git\/PR history\):/, "", line)
+    print line
+    next
+  }
+  grab && !/^#/ { exit }
+  grab {
+    line = $0
+    sub(/^#[ \t]*/, "", line)
+    if (index(line, emdash) > 0) {
+      line = substr(line, 1, index(line, emdash) - 1)
+      print line
+      exit
+    }
+    print line
+  }
+' "$BACKFILL")
+comment_field_list=$(printf '%s\n' "$comment_raw" \
+  | tr '\n' ' ' \
+  | tr -s '[:space:]' ' ' \
+  | sed -E 's/,[[:space:]]*/,/g; s/^[[:space:]]+//; s/[[:space:]]+$//; s/,$//')
+
+extract_null_keys=$(jq -r 'to_entries | map(select(.value == null) | .key) | join(",")' <<<"$drift_extract_rec")
+assert_eq "$comment_field_list" "$extract_null_keys" "backfill-outcomes.sh's header comment 'Fields left null' list matches cmd_extract's actual null-valued keys exactly, same set AND same order (no doc drift)"
+
 echo "backfill-outcomes.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]

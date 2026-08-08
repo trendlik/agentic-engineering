@@ -101,6 +101,13 @@ skill no longer has — verify before trusting it.
   condition ("worktree mode only", "skip this block in local mode", a `$RUN_E2E` branch).
   Content placed there inherits the condition. If it should apply unconditionally, give it its
   own subsection outside the conditional block. (issue #42, 2026-08-05, skill@v1.3.0)
+- An assertion must fail when its target is broken. Two shapes silently cannot:
+  `jq -r '.field'` prints `null` for an ABSENT key exactly as it does for an explicit
+  null (pair it with `has("field")`), and `assert_eq "$(cmd …)" ""` passes when `cmd`
+  failed and produced nothing (assert the exit status first). Any assertion whose
+  expected value is `""` or `null` needs a companion assertion pinning presence or
+  success. This is broader than the mutation-testing rule above, which covers only
+  drift tests comparing prose to code. (issue #58, 2026-08-08, skill@v1.4.0)
 
 ## CI quirks (Phase 7)
 
