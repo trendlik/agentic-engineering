@@ -18,6 +18,12 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.5.1]
+
+Clarifies Phase 8 Step 1 comments and SKILL.md outcome ledger documentation so Antigravity coordinators record model tier aliases (`gemini-3.5-flash`/`gemini-3.5-pro`) rather than sub-agent tool `TypeName`s (`self`/`research`) in `record-outcome.sh` (#64).
+
+Not breaking — backward compatible documentation and comment clarification.
+
 ### [1.5.0]
 
 Stores platform and per-phase model metadata (`coordinator_model`, `implement_model`, `test_model`, `review_model`, `fix_model`, `ci_fix_model`) in the outcomes ledger (`.implement-issue/outcomes.jsonl`) to track AI model performance across execution phases (#58). Also untracks `.claude/settings.json` so its `.gitignore` rule takes effect properly (#59).
