@@ -980,11 +980,16 @@ gh issue view <number> --json createdAt
   platform=<adapter running this workflow, e.g. claude-code> \
   coordinator_model=<coordinator's own concrete model ID, self-reported> \
   implement_model=<Phase 3 sub-agent's model alias as spawned> \
-  test_model=<Phase 4 sub-agent's model alias as spawned, if it ran> \
-  review_model=<Phase 5 sub-agent's model alias as spawned> \
-  fix_model=<Phase 6 fix sub-agent's model alias as spawned, if it ran> \
-  ci_fix_model=<Phase 7 CI-fix sub-agent's model alias as spawned, if it ran>
+  review_model=<Phase 5 sub-agent's model alias as spawned>
 ```
+
+The base invocation above is the complete command whenever Phase 4, a Phase 6 fix round, and a Phase 7 CI-fix round were all skipped this run. Append the arguments below individually, and only for a phase that actually ran — each one added the same way any base arg is (a trailing ` \` on the new preceding last line, then the `key=value`), so the invocation stays a single command:
+
+- append `test_model=<Phase 4 sub-agent's model alias as spawned>` only if Phase 4 (test) ran
+- append `fix_model=<Phase 6 fix sub-agent's model alias as spawned>` only if a Phase 6 fix round ran
+- append `ci_fix_model=<Phase 7 CI-fix sub-agent's model alias as spawned>` only if a Phase 7 CI-fix round ran
+
+This way the structurally easy path — writing nothing extra — is also the correct one for a phase that never ran; there is no line to delete and no backslash to repair.
 
 **One-time backfill offer (best-effort, non-blocking — same posture as above).** If this run just seeded a previously-empty ledger (`LEDGER_LINES` was `0`) AND the repo has reconstructable history — at least one already-closed issue carrying a `stage:*` label — then the ledger is missing every issue implemented before it existed. Offer (never force) a one-time backfill so the reference class isn't permanently empty:
 

@@ -328,6 +328,19 @@ rec=$(grep '"issue":43' "$ledger")
 assert_eq "$(jq -r '.platform' <<<"$rec")" "some-future-adapter" "arbitrary platform value is stored verbatim"
 rm -f "$ledger"
 
+# --- platform= (explicit empty string) pins the omit-vs-empty distinction:
+# no emptiness check is enforced, so `platform=` stores "" (a caller
+# mistake), distinguishable from an omitted argument (which stores null —
+# see the "unsupplied model fields" block above). The header comment
+# documents omission, not an empty string, as the "phase never ran"
+# convention.
+ledger=$(mktemp)
+OUTCOMES_FILE="$ledger" "$RECORD" 46 platform= >/dev/null 2>&1
+rec=$(cat "$ledger")
+assert_eq "$(jq -r '.platform' <<<"$rec")" "" "explicit platform= stores an empty JSON string (no emptiness check enforced)"
+assert_eq "$(jq -r '.platform | type' <<<"$rec")" "string" "explicit platform= is a JSON string, distinguishable from an omitted (null) field"
+rm -f "$ledger"
+
 # --- *_model fields are not integer-validated: non-numeric values pass ----
 ledger=$(mktemp)
 assert_success "implement_model accepts a non-numeric value (not integer-validated)" \

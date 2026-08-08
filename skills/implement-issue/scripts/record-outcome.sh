@@ -9,10 +9,10 @@
 #   record-outcome.sh <issue> key=value [key=value ...]
 #
 # Known keys (anything else is rejected):
-#   issue pr labels outcome plan_file_count files_changed diff_loc commits
-#   clarify_rounds plan_revisions review_loops ci_fixes wall_clock_hours
-#   platform coordinator_model implement_model test_model review_model
-#   fix_model ci_fix_model skill_sha skill_version recorded_at
+#   issue title pr labels outcome plan_file_count files_changed diff_loc
+#   commits clarify_rounds plan_revisions review_loops ci_fixes
+#   wall_clock_hours platform coordinator_model implement_model test_model
+#   review_model fix_model ci_fix_model skill_sha skill_version recorded_at
 #
 # - `issue` is also given positionally (first arg) and must be a
 #   non-negative integer.
@@ -21,17 +21,20 @@
 #   cannot be represented this way and will be split into bogus entries.
 # - `outcome` must be one of: merged, closed, aborted.
 # - `platform` (e.g. `claude-code`, `antigravity`) and the per-phase
-#   `*_model` fields are free-form non-empty strings, validated like `title`
-#   and `skill_sha` (no enum) so a new adapter never needs a code change
-#   here. Omit the argument entirely (never pass `key=""`) when that phase's
-#   agent was never spawned in this run (e.g. an LGTM review has no
-#   fix_model, a green first CI run has no ci_fix_model, a non-logic change
-#   has no test_model) — it is written as null, never defaulted to another
-#   phase's or tier's model. Record the most precise identifier actually
-#   known: a concrete model ID for `coordinator_model` (e.g. `claude-opus-5`,
-#   self-reported by the coordinator), and the alias the sub-agent was
-#   spawned with for the other `*_model` fields (e.g. `sonnet`,
-#   `gemini-3.5-flash`) — never guess an alias's resolved version.
+#   `*_model` fields are free-form strings, validated like `title` and
+#   `skill_sha` (no enum, no emptiness check) so a new adapter never needs a
+#   code change here — `platform=` stores `""`, not an error. The caller
+#   convention for "this phase's agent was never spawned in this run" (e.g.
+#   an LGTM review has no fix_model, a green first CI run has no
+#   ci_fix_model, a non-logic change has no test_model) is to OMIT the
+#   argument entirely, never pass `key=""`: an omitted field is written as
+#   JSON null — distinguishable from the empty string an explicit `key=""`
+#   would store — and null is never defaulted to another phase's or tier's
+#   model. Record the most precise identifier actually known: a concrete
+#   model ID for `coordinator_model` (e.g. `claude-opus-5`, self-reported by
+#   the coordinator), and the alias the sub-agent was spawned with for the
+#   other `*_model` fields (e.g. `sonnet`, `gemini-3.5-flash`) — never guess
+#   an alias's resolved version.
 # - Any known key not supplied is written as JSON null.
 # - `recorded_at` defaults to today (`date +%F`); `skill_sha` defaults to
 #   this skill's short commit sha (or "unknown"); `skill_version` defaults to

@@ -144,20 +144,34 @@ assert_failure "closes-issue: bare '#42' mention (no keyword) does not match" ba
 assert_failure "closes-issue: '#420' does not match issue 42 (no trailing-digit false match)" bash -c "printf 'Closes #420' | \"$BACKFILL\" closes-issue 42"
 assert_failure "closes-issue: 'enclose #42' does not match ('close' as substring of another word)" bash -c "printf 'enclose #42' | \"$BACKFILL\" closes-issue 42"
 
-# --- field-set drift: extract's key set must exactly match record-outcome.sh's
-# null skeleton. The field list is duplicated across the two scripts by
-# design (see WORKFLOW.md/SKILL.md's noted architecture deviation); this
-# assertion is the mechanical guard against the two drifting apart.
+# --- field-set drift: extract's keys must exactly match record-outcome.sh's
+# null skeleton, in the SAME ORDER. The field list is duplicated across the
+# two scripts by design (see WORKFLOW.md/SKILL.md's noted architecture
+# deviation); this assertion is the mechanical guard against the two
+# drifting apart. Both scripts write into the same JSONL file, so order
+# drift produces inconsistently-shaped lines, not just a set mismatch.
+#
+# Uses its own locally-scoped extract record (regenerated here, not the
+# $rec left over from the merged-PR fixture ~100 lines above) so this
+# assertion doesn't silently depend on no intervening reassignment.
 RECORD="$SCRIPTS_DIR/record-outcome.sh"
+
+drift_extract_rec=$("$BACKFILL" extract "$issue_merged" "$pr_merged")
+
 drift_ledger=$(mktemp)
 rm -f "$drift_ledger"  # record-outcome.sh must create it itself
-OUTCOMES_FILE="$drift_ledger" "$RECORD" 999 title=DriftCheck >/dev/null 2>&1
-record_min_rec=$(cat "$drift_ledger")
+OUTCOMES_FILE="$drift_ledger" "$RECORD" 999 title=DriftCheck >/dev/null
+drift_record_status=$?
+assert_eq "$drift_record_status" "0" "drift check: record-outcome.sh exits 0 writing the minimal DriftCheck record"
+drift_record_min_rec=$(cat "$drift_ledger")
 rm -f "$drift_ledger"
 
-extract_keys=$(jq -S 'keys' <<<"$rec")
-record_keys=$(jq -S 'keys' <<<"$record_min_rec")
-assert_eq "$extract_keys" "$record_keys" "extract's key set matches record-outcome.sh's null skeleton exactly (no field-list drift)"
+# keys_unsorted preserves insertion order (jq's `keys` sorts, which would
+# hide ordering drift); joining into a single string makes both the set and
+# the order part of one comparable value.
+extract_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$drift_extract_rec")
+record_keys=$(jq -r 'keys_unsorted | join(",")' <<<"$drift_record_min_rec")
+assert_eq "$extract_keys" "$record_keys" "extract's keys match record-outcome.sh's null skeleton exactly, same set AND same order (no field-list or ordering drift)"
 
 echo "backfill-outcomes.sh: $ASSERT_PASS passed, $ASSERT_FAIL failed"
 [[ $ASSERT_FAIL -eq 0 ]]
