@@ -18,6 +18,12 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.5.0]
+
+Stores platform and per-phase model metadata (`coordinator_model`, `implement_model`, `test_model`, `review_model`, `fix_model`, `ci_fix_model`) in the outcomes ledger (`.implement-issue/outcomes.jsonl`) to track AI model performance across execution phases (#58). Also untracks `.claude/settings.json` so its `.gitignore` rule takes effect properly (#59).
+
+Not breaking — backward compatible with existing outcome ledger entries.
+
 ### [1.4.0]
 
 Routes the **Review checklist (Phase 5)** section of `.implement-issue/LEARNINGS.md` into the prompts of the four code-writing sub-agents — Phase 3 (implement), Phase 4 (test-authoring), Phase 6 (review-fix), and Phase 7 (CI-fix) — so they build to the same bar the Phase 5 reviewer applies, instead of discovering it a review round later (#42). WORKFLOW.md gains a single **Authoring standards routing** section that defines the behavior once; the four phases point back to it. The section is appended verbatim and last, under a heading that marks it as data, not instructions.
