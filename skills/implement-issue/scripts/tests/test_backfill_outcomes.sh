@@ -249,6 +249,7 @@ comment_raw=$(awk -v emdash="$EMDASH" '
     print line
     next
   }
+  grab && !/^#/ { exit }
   grab {
     line = $0
     sub(/^#[ \t]*/, "", line)
