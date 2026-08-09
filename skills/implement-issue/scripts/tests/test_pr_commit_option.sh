@@ -21,9 +21,12 @@ assert_success "WORKFLOW.md documents asking user whether to commit retrospectiv
 assert_success "WORKFLOW.md documents pushing retrospective changes to feature branch" \
   grep -Fq 'git push origin HEAD:<feature_branch>' "$WORKFLOW_FILE"
 
-# 3. Check WORKFLOW.md documents staging both LEARNINGS.md and outcomes.jsonl
-assert_success "WORKFLOW.md documents staging LEARNINGS.md and outcomes.jsonl" \
-  grep -Fq 'git add .implement-issue/LEARNINGS.md .implement-issue/outcomes.jsonl' "$WORKFLOW_FILE"
+# 3. Check WORKFLOW.md documents conditional staging for LEARNINGS.md and outcomes.jsonl
+assert_success "WORKFLOW.md documents conditional staging for LEARNINGS.md" \
+  grep -Fq '[[ -f .implement-issue/LEARNINGS.md ]] && git add .implement-issue/LEARNINGS.md' "$WORKFLOW_FILE"
+
+assert_success "WORKFLOW.md documents conditional staging for outcomes.jsonl" \
+  grep -Fq '[[ -f .implement-issue/outcomes.jsonl ]] && git add .implement-issue/outcomes.jsonl' "$WORKFLOW_FILE"
 
 # 4. Check WORKFLOW.md Step 1b documents deferring outcomes.jsonl commit to retrospective commit step
 assert_success "WORKFLOW.md Step 1b documents deferring outcomes.jsonl commit to retrospective commit step" \

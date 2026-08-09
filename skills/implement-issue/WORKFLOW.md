@@ -1076,14 +1076,16 @@ Classify the user's reply following **Checkpoint discipline**:
 - **Include in feature PR (commit directly to feature branch)**:
   Stage files, commit, and push directly to the feature branch so the retrospective changes become part of the feature PR:
   ```bash
-  git add .implement-issue/LEARNINGS.md .implement-issue/outcomes.jsonl
+  [[ -f .implement-issue/LEARNINGS.md ]] && git add .implement-issue/LEARNINGS.md
+  [[ -f .implement-issue/outcomes.jsonl ]] && git add .implement-issue/outcomes.jsonl
   git commit -m "docs: implement-issue learnings and outcomes from issue #<number>"
   git push origin HEAD:<feature_branch>
   ```
 - **Separate commit / follow-up PR**:
   Stage files and commit as a separate commit:
   ```bash
-  git add .implement-issue/LEARNINGS.md .implement-issue/outcomes.jsonl
+  [[ -f .implement-issue/LEARNINGS.md ]] && git add .implement-issue/LEARNINGS.md
+  [[ -f .implement-issue/outcomes.jsonl ]] && git add .implement-issue/outcomes.jsonl
   git commit -m "docs: implement-issue learnings and outcomes from issue #<number>"
   ```
 - **Question or ambiguous input**: answer the question or address the input, then re-ask the same question and wait — do NOT commit until explicit choice is received.
