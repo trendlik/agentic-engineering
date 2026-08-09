@@ -18,6 +18,10 @@ moving its symlink forward.
 
 ## implement-issue
 
+### [1.6.0]
+
+Allows committing retrospective learnings (`.implement-issue/LEARNINGS.md`) and outcome ledger records (`.implement-issue/outcomes.jsonl`) directly to the feature PR branch as part of the feature PR after CI passes (#66).
+
 ### [1.5.1]
 
 Clarifies Phase 8 Step 1 comments and SKILL.md outcome ledger documentation so Antigravity coordinators record model tier aliases (`gemini-3.5-flash`/`gemini-3.5-pro`) rather than sub-agent tool `TypeName`s (`self`/`research`) in `record-outcome.sh` (#64).
