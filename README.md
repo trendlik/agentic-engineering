@@ -16,7 +16,7 @@ is simply symlinked straight from `skills/` as before.
   humans approve at the key gates. Phases: clarify → plan → implement → test →
   review → PR → CI-fix loop → retrospective.
   The retrospective is what makes this **compound**: every run feeds project-specific
-  learnings back into the target repo (`.implement-issue/LEARNINGS.md`), so each phase
+  learnings back into the target repo (`.implement-issue/LEARNINGS.md`) and records outcomes (`.implement-issue/outcomes.jsonl`), with the option to commit them directly to the feature PR branch as part of the feature PR after CI passes, so each phase
   gets sharper with every issue — the skill isn't just a pipeline, it's a loop that
   tunes itself to the repo it runs in.
   Runs in an isolated git worktree by default; pass `--local` to work directly in
