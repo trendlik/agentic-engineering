@@ -112,3 +112,4 @@ skill no longer has — verify before trusting it.
 ## CI quirks (Phase 7)
 
 <!-- Known flaky checks, their failure signatures, and proven fixes -->
+- New shell test scripts in `scripts/tests/` must have executable file permissions (`chmod +x`) set so they can be run directly. (issue #66, 2026-08-09, skill@d3d278e)
