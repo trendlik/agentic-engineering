@@ -920,7 +920,7 @@ Tally the following from this session:
 
 ### Step 1b — Record the outcome ledger entry
 
-Best effort, non-blocking (same posture as the `state.sh` calls elsewhere): persist this run's signals into `.implement-issue/outcomes.jsonl` in the target repo via `scripts/record-outcome.sh`. If the call fails (no write access, disk issue, offline), log a warning and continue — do not let it stop the retrospective. This step exists so a future change-sizing step has a reference class of actual past runs to draw on; it stores raw signals only, no size judgment.
+Best effort, non-blocking (same posture as the `state.sh` calls elsewhere): persist this run's signals into `.implement-issue/outcomes.jsonl` in the target repo via `scripts/record-outcome.sh`. If the call fails (no write access, disk issue, offline), log a warning and continue — do not let it stop the retrospective. This step exists so a future change-sizing step has a reference class of actual past runs to draw on; it stores raw signals only, no size judgment. `record-outcome.sh` writes the entry to `.implement-issue/outcomes.jsonl` in the working tree without running `git commit`. Committing `.implement-issue/outcomes.jsonl` to git (along with any approved `.implement-issue/LEARNINGS.md` entries) occurs during the retrospective commit step in Step 4a, where the user is interactively offered the choice to commit them directly to `$FEATURE_BRANCH` so they become part of the open feature PR.
 
 **First, capture whether the ledger is being seeded from empty** — do this *before* the `record-outcome.sh` write below, because that write adds this run's entry and an "is the ledger empty?" check afterward would never observe an empty ledger:
 
@@ -1055,20 +1055,38 @@ Show the project-scoped proposals to the user in a single message and ask:
 **STOP and wait for explicit user response** before modifying `.implement-issue/LEARNINGS.md` or running `git commit`.
 
 Classify the user's reply following **Checkpoint discipline** (top of this file):
-- **Explicit approval ("store all", "store", or selective choices)**: proceed to append only the approved entries and commit.
-- **Skip / decline ("skip")**: do NOT modify `.implement-issue/LEARNINGS.md` and do NOT execute `git commit`.
+- **Explicit approval ("store all", "store", or selective choices)**: proceed to append only the approved entries and proceed to the retrospective commit step below.
+- **Skip / decline ("skip")**: do NOT modify `.implement-issue/LEARNINGS.md` and do NOT execute `git commit`. Proceed to the retrospective commit step below to commit `.implement-issue/outcomes.jsonl` if recorded.
 - **Question or ambiguous input**: answer the question or address the input, then re-ask the same approval question and wait — do NOT touch `.implement-issue/LEARNINGS.md` or execute `git commit` until explicit approval is received.
 
 For each accepted proposal (once explicit approval is received):
 
 1. If `.implement-issue/LEARNINGS.md` doesn't exist at the project root, create it from `$SKILL_DIR/templates/LEARNINGS.md`.
 2. Append the entry under its target section heading, ending with provenance: `(issue #<number>, <YYYY-MM-DD>, skill@<sha|vVersion>)` — using the short git commit SHA if `$SKILL_DIR` is a git checkout, falling back to `v<version>` from `$SKILL_DIR/SKILL.md` frontmatter (or `unknown` if neither is resolvable).
-3. Commit in the project repo:
 
-```bash
-git add .implement-issue/LEARNINGS.md
-git commit -m "docs: implement-issue learnings from issue #<number>"
-```
+#### Retrospective commit step (feature PR vs separate commit/PR)
+
+After processing project-scoped proposals (or if `outcomes.jsonl` was recorded in Step 1b), commit the retrospective changes (`.implement-issue/outcomes.jsonl` and any approved `.implement-issue/LEARNINGS.md` entries).
+
+Ask the user interactively:
+
+> "Commit retrospective changes (.implement-issue/outcomes.jsonl and approved LEARNINGS.md entries) directly to feature branch `<feature_branch>` to include them in PR #<pr_number>, or commit as a separate follow-up commit/PR?"
+
+Classify the user's reply following **Checkpoint discipline**:
+- **Include in feature PR (commit directly to feature branch)**:
+  Stage files, commit, and push directly to the feature branch so the retrospective changes become part of the feature PR:
+  ```bash
+  git add .implement-issue/LEARNINGS.md .implement-issue/outcomes.jsonl
+  git commit -m "docs: implement-issue learnings and outcomes from issue #<number>"
+  git push origin HEAD:<feature_branch>
+  ```
+- **Separate commit / follow-up PR**:
+  Stage files and commit as a separate commit:
+  ```bash
+  git add .implement-issue/LEARNINGS.md .implement-issue/outcomes.jsonl
+  git commit -m "docs: implement-issue learnings and outcomes from issue #<number>"
+  ```
+- **Question or ambiguous input**: answer the question or address the input, then re-ask the same question and wait — do NOT commit until explicit choice is received.
 
 If the commit fails (e.g. detached state, hooks), report what was written and where — the file content is the deliverable; the commit is best-effort.
 

@@ -139,7 +139,7 @@ This is where the skill's core value lives — it's "optional" only in the sense
 the skill still *runs* without it, degrading to a generic pipeline. But the
 compounding feedback loop **is** the point of the skill: this per-project file is
 written by the Phase 8 retrospective (with user approval) and *read* by every future
-run to tailor its phases to the repo, so each run gets sharper than the last. Adopt
+run to tailor its phases to the repo, so each run gets sharper than the last. Learnings (along with `outcomes.jsonl`) can be committed directly to the feature PR branch so they merge as part of the feature PR. Adopt
 it first; the layers below merely make individual runs smoother, whereas this is what
 makes the skill get *better over time*. Skip it and you keep re-solving the same
 clarify gaps, plan misses, and CI flakes on every issue.
@@ -262,7 +262,7 @@ read the issue's label history in the GitHub UI.
 ## 7. Optional: outcome ledger (for future change-sizing)
 
 Phase 8 appends one line per run to `.implement-issue/outcomes.jsonl` (size and
-friction signals per completed issue). It's created automatically on first run.
+friction signals per completed issue). The retrospective offers to commit `outcomes.jsonl` (and any approved `LEARNINGS.md` entries) directly to the feature PR branch as part of the feature PR after CI passes. It's created automatically on first run.
 If the repo already has merged history, you can seed the ledger so the future
 change-sizing step has a reference class:
 
